@@ -5,7 +5,7 @@ import json
 import re
 from library import connect, now
 
-EXCLUDED_TYPES={'news','news & views','news feature','news in focus','editorial','correction','author correction',
+EXCLUDED_TYPES={'news','news & views','news feature','news in focus','editorial','comment','commentary','correction','author correction',
  'publisher correction','erratum','corrigendum','retraction','retraction note','book review','obituary',
  'career column','careers','research highlight','research highlights','advertisement'}
 TITLE_PREFIX=re.compile(r'^(author correction|publisher correction|correction|corrigendum|erratum|retraction(?: note)?|retracted)\s*[:：]',re.I)

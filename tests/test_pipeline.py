@@ -24,6 +24,9 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(extract(payload,'10.1000/a'),'Verified')
         self.assertIsNone(extract(payload,'10.1000/b'))
     def test_types_preserve_research_and_uncertainty(self):
+        for kind in ('Comment', 'Commentary'):
+            self.assertIsNotNone(exclusion({'type':kind,'title':'Environmental implications of innovation'}))
+        self.assertIsNone(exclusion({'type':'Discussion','title':'Food-system trade-offs'}))
         for kind in ['Article','Research article','Review','Perspective','journal-article','']:
             self.assertIsNone(exclusion({'type':kind,'title':'Industrial transition'}))
         for kind in ['News','Editorial','Author Correction','Book Review']:

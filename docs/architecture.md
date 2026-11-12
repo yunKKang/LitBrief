@@ -49,20 +49,20 @@ Pro核验报告主要结论采纳；它使用旧30刊范围，当前为27刊。S
 优先路线：
 
 1. 保留已可用的官方RSS、Nature目录与精确DOI校验；Crossref做查漏补充，不成为出版社文章入库的前置条件。
-2. 先申请并验证 **Scopus Abstract Retrieval**，争取用一个跨出版社接口解决主要缺口。ScienceDirect Article Retrieval用于Elsevier最新文章或Scopus缺口；Springer Meta只在实测能改善Nature覆盖或维护成本时引入。
+2. 先把已有可用公开路径移出攻关范围，按[来源缺口清单](source-access.md)处理剩余刊。Scopus/ScienceDirect仅补已证实的缺口；Springer Meta对当前已有Nature公共路径增益待证，暂不购买Premium。
 3. 公共来源只保留已经证明有增益的OpenAlex／Europe PMC。不要默认给每篇文章串联所有数据库和全文下载。
-4. 若校外机构令牌不可用，再评估获准校内Linux节点。优先一个运行位置；只有确需校内采集、校外展示时才分离采集节点。VPN、Cookie或远程桌面不作为生产可靠性前提。
+4. 用户选择保守部署：优先现有本地/校内环境采集和审核，外部网站仅托管已审静态文件。不追求校外服务器直接使用学校订阅，不以Institutional Token或VPN无人值守为前提。先手动/本地定时运行，再评估确有必要的校内常开节点。
 5. 稳定发现入口仍须逐刊核对。摘要接口成功不能解决所有目录漏抓，跨库检索只能作为明确标注的延迟发现备选。
 
-本轮新增 `publisher_probe.py`：单DOI、最多一次请求、不自动重试、不存摘要、不调用AI。支持Scopus／ScienceDirect／Springer和Europe PMC状态核验。已做离线解析、错误分类和密钥隔离测试；三家凭证接口尚无真实key，未宣称通过覆盖验收。账号检查、申请和命令见 [API申请与验证](publisher-api-access.md)。
+本轮新增 `publisher_probe.py`：单DOI、最多一次请求、不自动重试、不存摘要、不调用AI。支持Scopus／ScienceDirect／Springer和Europe PMC状态核验。已做离线解析、错误分类和密钥隔离测试；Elsevier已有key并实测被API认证/授权拒绝，直连对照未改善；Springer尚待申请。未宣称通过覆盖验收。账号检查、申请和命令见 [API申请与验证](publisher-api-access.md)。
 
 授权是具体现实依赖：Elsevier当前ScienceDirect TDM条款对第三方处理/托管有明确要求，申请应把AI供应商、云服务器和公开中文分析一并说明。该条款不能直接泛化成所有出版商、所有开放摘要的统一法律结论。
 
-## 月度方案：建议采纳，但先不改变现有分刊
+## 月度方案：用户已同意机制，待实现分刊与组期
 
 把发现频率、AI筛选频率、公开组期分开。仍定期低成本发现题录，保留原始在线日期；月底处理尚未筛选的月度候选。这样防止RSS滚动丢文，也无需每四天花人工审核低命中来源。
 
-建议第一批只试 **Applied Energy、Building and Environment** 两刊；ESE、RSER先观察，确有低收益高负担时再转。RCR保持现有安排。用户尚未确认月度具体名单，当前27刊运行配置未改变，月度生成器尚未实现。
+建议第一批只试 **Applied Energy、Building and Environment** 两刊；ESE、RSER先观察，确有低收益高负担时再转。RCR保持现有安排。用户已确认月度机制可行；上述两刊沿用首批实施建议，当前27刊周期配置未改变，月度生成器尚未实现。
 
 月度标准：直接对应五个核心研究问题；主要结论能解释系统转型、政策、供应链或住房需求；相对已发文献有新增阅读价值。边缘关联、工程实现、工艺与局部性能提升仍排除，不把月度栏目当收容区。不设Top N，不凑数；月底没有合格文章就不生成空刊。
 

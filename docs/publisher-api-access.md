@@ -1,6 +1,6 @@
 # 出版社 API：检查、申请与验证
 
-核对日期：2026-11-12。范围为当前27刊，只需题录与正式摘要。密钥未配置，凭证接口未实测；以下是官方机制与可执行步骤，不保证个人注册就获得学校权益。
+核对日期：2026-11-12。范围为当前27刊，只需题录与正式摘要。Elsevier key已配置并完成小样本请求，当前仍被API认证/授权拒绝；Springer key尚未取得。以下是官方机制与可执行步骤，不保证个人注册就获得学校权益。
 
 ## 先检查已有账号
 
@@ -80,6 +80,26 @@ python scripts/publisher_probe.py --provider springer --paper-id 2193 --live
 ## 已执行的核对
 
 - 官方Elsevier认证、摘要/文章接口、校外访问和当前TDM条款已打开核对；Springer产品页的Basic计划与支持字段已核对。开发者门户部分文档需前端渲染，未假称看到了登录后的完整表单。
-- 本地`.env`未配置这两家出版商key，Scopus和Springer探针均返回credential_missing，没有请求凭证接口。
+- 初始缺key检查后，用户提供Elsevier key，已配置在忽略的.env并进行6次串行诊断请求。系统HTTP代理路径与显式直连结果一致：Scopus 401/AUTHORIZATION_ERROR；ScienceDirect 403/AUTHENTICATION_ERROR。未取得摘要，不能单据此判为付费问题或key无效；Springer仍待申请。
 - Europe PMC以core串行查询当前剩余3个DOI，均为HTTP200、record_not_found；结果在本地outputs/access-diagnostics，不含原文摘要。
 - 解析和安全检查用虚构响应验证；不代表Scopus／ScienceDirect／Springer已经真实联通。
+
+## 哪些期刊受益，是否值得申请或付费
+
+以当前27刊名单为准，三个产品要分开：
+
+| 产品 | 本项目对应范围 | 当前投入判断 |
+|---|---|---|
+| ScienceDirect Article Retrieval | One Earth、Environmental Science & Ecotechnology、Renewable and Sustainable Energy Reviews、Global Environmental Change、Energy Economics、The Lancet Planetary Health、Resources, Conservation and Recycling、Applied Energy、Building and Environment（9刊） | 仅针对已证实的公开摘要获取缺口；先核实已有key权限，不购买全文套餐。 |
+| Scopus Abstract Retrieval | 跨出版社：可能覆盖上述9刊、13本Nature刊，以及Science、Science Advances、PNAS、Earth's Future、ES&T中已被Scopus收录且带摘要的文章 | 潜在补缺范围最广，但尚未逐刊验证尤其新刊和最新文。已有公共路径不迁走，校外Token不再作为前提。 |
+| Springer Nature Meta API | Nature、Nature Communications、Nature Sustainability、Nature Energy、Nature Climate Change、Nature Cities、Nature Water、Nature Geoscience、Nature Reviews Earth & Environment、Nature Reviews Clean Technology、Communications Earth & Environment、Nature Food、Nature Health（13刊） | 已有公开目录与摘要路径，当前增量收益较低；免费Basic可申请验证，暂不付费Premium。 |
+
+Springer [官方产品页](https://datasolutions.springernature.com/products/meta-data/)明确有免费Basic和需询价的Premium；免费计划提供有限请求的标准元数据，摘要字段与13刊覆盖仍需实测。注册或申请API不等于必须付费，作者发表OA的APC也不是读者或API使用费。
+
+Elsevier [Scopus产品页](https://dev.elsevier.com/sc_apis.html)说明非商业学术用途可在政策与额度条件下免费使用；实际产品scope、机构权益和用途仍需核实。不要把接口授权申请自动理解为个人购买数据库。公开网站与第三方AI用途应如实向馆员说明，优先争取现有权益。
+
+OA文章通常可直接阅读全文，很多非OA文章也公开标题和摘要；公共内容不保证自动请求一定通过网站防护。现有路径能读就继续用，API的价值是减少实际缺口和维护成本，并非所有期刊的必需许可证。
+
+当前优先级：公共路径→确实缺失的题录/摘要→已有免费/机构权益接口→仍不可行时人工少量补充或降频/停用。付费前必须明确新增补齐的合格论文数量、授权用途和维护成本，不因期刊品牌或“可能覆盖”先付钱。
+
+校园网对照命令：`python scripts/publisher_probe.py --provider scopus --paper-id 1826 --live --direct`。`--direct`仅忽略本次urllib HTTP代理，不修改系统代理/路由或TUN，因此不能独立证明最终请求出口被出版社识别为机构IP。没有新授权或网络证据时不反复重试当前失败。

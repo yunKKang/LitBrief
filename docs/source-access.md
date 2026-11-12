@@ -1,5 +1,62 @@
 # 出版社访问问题与解决路径
 
+## 当前攻关范围（2026-11-12 更新）
+
+用户确认：先保留已有正常采集路径，只针对剩余缺口解决问题或讨论取舍。OA/公开摘要、网页防护和API权限分开判断；HTTP403不是付费墙证明，不为公共摘要先购买API。已有路径按持续观察维护，不等同于跨周期“稳定零遗漏”验收。
+
+- **暂不新增API适配的13刊**：Nature系列。历史核验已逐刊遍历分页目录跨过窗口起点，部分正式摘要解析已验证；沿用公开目录/文章页，只有新增实际失败才重新进入攻关。
+- **保留现有路径、仅对差集排查的4刊**：Science、Science Advances、PNAS、Earth's Future。RSS可读，历史Crossref样本多数带摘要；目前仍缺非Nature完整目录对账，不能把Crossref样本率视为总体覆盖。先核验缺失文章类型与时效，不整刊重做。
+- **集中处理的10刊**：ES&T优先修复出版社发现入口；ScienceDirect现有9刊重点查正式摘要路径及目录差集。其中Applied Energy和Building and Environment按已同意的月度机制作为首批实施候选，不删除来源。用户同意月度机制，生成器与分刊配置尚未落地。
+
+下表引用2026-10-13至11-11的历史核验，只过滤为当前27刊；不是本轮重新联网跑27刊。摘要数是Crossref原始非空字段计数，分母混合研究与非研究类型，不能称为“研究论文摘要获取率”。“目录跨窗”表示该次遍历成功，不表示长期稳定或此刻最新。
+
+| 当前期刊 | 发现证据 | 历史Crossref摘要/题录 | 当前动作 |
+|---|---|---:|---|
+| Nature | RSS＋出版社目录跨窗 | 37/399 | 沿用公开路径，暂不攻关API |
+| Science | RSS可读；完整目录未验收 | 144/174 | 保留现有路径，仅排查差集 |
+| Proceedings of the National Academy of Sciences of the United States of America | RSS可读；完整目录未验收 | 378/430 | 保留现有路径，仅排查差集 |
+| Nature Communications | RSS＋出版社目录跨窗 | 340/832 | 沿用公开路径，暂不攻关API |
+| Science Advances | RSS可读；完整目录未验收 | 329/336 | 保留现有路径，仅排查差集 |
+| Nature Sustainability | RSS＋出版社目录跨窗 | 5/24 | 沿用公开路径，暂不攻关API |
+| Nature Energy | RSS＋出版社目录跨窗 | 5/18 | 沿用公开路径，暂不攻关API |
+| Nature Climate Change | RSS＋出版社目录跨窗 | 7/33 | 沿用公开路径，暂不攻关API |
+| Nature Cities | RSS＋出版社目录跨窗 | 2/13 | 沿用公开路径，暂不攻关API |
+| Nature Water | RSS＋出版社目录跨窗 | 1/21 | 沿用公开路径，暂不攻关API |
+| One Earth | RSS可读；完整目录未验收 | 0/13 | 按缺口补摘要/核对目录 |
+| Environmental Science & Ecotechnology | RSS可读；完整目录未验收 | 0/19 | 按缺口补摘要/核对目录 |
+| Renewable and Sustainable Energy Reviews | RSS可读；完整目录未验收 | 0/241 | 按缺口补摘要/核对目录 |
+| Earth's Future | RSS可读；完整目录未验收 | 49/51 | 保留现有路径，仅排查差集 |
+| Nature Geoscience | RSS＋出版社目录跨窗 | 4/15 | 沿用公开路径，暂不攻关API |
+| Nature Reviews Earth & Environment | RSS＋出版社目录跨窗 | 0/8 | 沿用公开路径，暂不攻关API |
+| Nature Reviews Clean Technology | RSS＋出版社目录跨窗 | 0/6 | 沿用公开路径，暂不攻关API |
+| Environmental Science & Technology | RSS未通；目前依赖Crossref发现 | 266/300 | 优先修复发现入口 |
+| Global Environmental Change | RSS可读；完整目录未验收 | 0/30 | 按缺口补摘要/核对目录 |
+| Energy Economics | RSS可读；完整目录未验收 | 0/110 | 按缺口补摘要/核对目录 |
+| Communications Earth & Environment | RSS＋出版社目录跨窗 | 37/78 | 沿用公开路径，暂不攻关API |
+| Nature Food | RSS＋出版社目录跨窗 | 0/13 | 沿用公开路径，暂不攻关API |
+| Nature Health | RSS＋出版社目录跨窗 | 5/9 | 沿用公开路径，暂不攻关API |
+| The Lancet Planetary Health | RSS可读；完整目录未验收 | 0/18 | 按缺口补摘要/核对目录 |
+| Resources, Conservation and Recycling | RSS可读；完整目录未验收 | 0/34 | 按缺口补摘要/核对目录 |
+| Applied Energy | RSS可读；完整目录未验收 | 0/485 | 按缺口补摘要/核对目录 |
+| Building and Environment | RSS可读；完整目录未验收 | 0/424 | 按缺口补摘要/核对目录 |
+
+### 本轮真实诊断
+
+- 用户确认当前电脑在南大校园网；程序会继承本机HTTP代理。显式禁用本次HTTP代理的对照后，Scopus仍返回401/AUTHORIZATION_ERROR，ScienceDirect仍返回403/AUTHENTICATION_ERROR。共6次串行请求（首测、错误代码诊断、直连对照各2次），无AI调用、无自动重试。不能因此证明学校未订阅或必须付费；也未核实系统TUN/最终机构出口。
+- key已配置在被Git忽略的本地.env。原凭证文件仅按文本提取，未执行其中内容，密钥及原始错误响应未公开。
+- 当前真正待补仅1条：The Lancet Planetary Health的Discussion。ScienceDirect浏览器本轮明确显示人机挑战，尚不能确定是否有正式摘要，保留待核，不据此买API或伪造摘要。
+- 两条PNAS原待补记录已核对成Comment/Commentary：`10.1073/pnas.2634314123`由PubMed精确DOI记录确认Comment且没有Abstract字段；`10.1073/pnas.2634836123`由官方文章页确认Commentary。按既有研究/综述主范围做类型排除，保存来源证据。未把数据库缺摘要泛化成文章无摘要。
+- 新类型规则排除明确Comment/Commentary，Discussion和Perspective仍保留判断空间。正式研究论文不能因一次抓取失败被排除。
+
+下一步优先对ES&T发现入口，以及ScienceDirect中有明确相关研究但缺摘要的样本查公开页面/正式摘要；已有Nature公开路径不追加付费方案。仅在确认存在“应有摘要的研究论文”而公共路径仍失败时，才申请对应API权限。成本高、收益低的来源讨论月度或退出，不提高并发。
+
+API对应期刊、收费判断与申请入口见 [API访问指南](publisher-api-access.md)。部署采用本地/校内采集筛选、外部站点仅接收审核后的静态文件；不以校外机构Token为前提。
+
+---
+
+## 历史诊断记录（保留原30刊范围）
+
+
 核验日期：2026-11-11。完整逐刊 HTTP 状态、挑战文字、响应摘要哈希和不含 Cookie 的响应头见 [本地诊断报告](../outputs/access-diagnostics/report.md) 与同目录 `latest.json`。本轮环境是本机 Windows 的无认证 HTTP 请求，并非生产服务器。不能据此承诺服务器可用，也不能将可读首页当作目录或摘要已完整覆盖。
 
 ## 30 本来源的观察结果

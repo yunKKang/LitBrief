@@ -7,12 +7,13 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import sqlite3
 import xml.etree.ElementTree as ET
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from audit_sources import doi, plain
 
@@ -67,10 +68,13 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def transport(request):
+def transport(request, *, direct=False):
     """No raw URL, response headers or exception messages escape this boundary."""
     try:
-        with build_opener(NoRedirect).open(request, timeout=35) as response:
+        handlers = [NoRedirect()]
+        if direct:
+            handlers.append(ProxyHandler({}))
+        with build_opener(*handlers).open(request, timeout=35) as response:
             body = response.read(MAX_BYTES + 1)
             if len(body) > MAX_BYTES:
                 return None, b'', {'transport_status': 'response_too_large'}
@@ -84,15 +88,24 @@ def transport(request):
         return None, b'', {'transport_status': 'network_error'}
 
 
+def provider_error_code(body):
+    """Expose only recognised error identifiers, never arbitrary server text."""
+    text = body.decode('utf-8', errors='replace')
+    codes = ('AUTHORIZATION_ERROR', 'AUTHENTICATION_ERROR', 'INVALID_APIKEY',
+             'INSUFFICIENT_PRIVILEGES', 'RATE_LIMIT_EXCEEDED', 'QUOTA_EXCEEDED')
+    return next((code for code in codes if re.search(r'\b' + code + r'\b', text, re.I)), None)
+
+
 def error_status(status, body):
     text = body.decode('utf-8', errors='replace').lower()
-    if status == 429:
+    code = provider_error_code(body)
+    if status == 429 or code in {'RATE_LIMIT_EXCEEDED', 'QUOTA_EXCEEDED'}:
         return 'rate_limited'
     if status in (301, 302, 303, 307, 308):
         return 'redirect_blocked'
-    if any(code in text for code in ('insufficient_privileges', 'insufficient scope', 'not entitled', 'not_entitled')):
+    if code == 'AUTHORIZATION_ERROR' or any(term in text for term in ('insufficient_privileges', 'insufficient scope', 'not entitled', 'not_entitled')):
         return 'not_entitled'
-    if status == 401:
+    if status == 401 or code in {'AUTHENTICATION_ERROR', 'INVALID_APIKEY'}:
         return 'authentication_failed'
     if status == 403:
         return 'challenge_page' if any(v in text for v in ('just a moment', 'verify you are human')) else 'forbidden_unknown'
@@ -161,6 +174,8 @@ def probe(provider, identifier, keys, live=False, fetch=transport):
     result.update(network_calls=1, http_status=status, **details)
     if status != 200:
         result['status'] = details.get('transport_status') or error_status(status, body)
+        if code := provider_error_code(body):
+            result['provider_error_code'] = code
     else:
         result.update(parse(provider, identifier, body))
     # Defence in depth against a provider echoing a credential inside parsed metadata.
@@ -180,6 +195,7 @@ def main():
     target.add_argument('--doi')
     target.add_argument('--paper-id', type=int)
     parser.add_argument('--live', action='store_true')
+    parser.add_argument('--direct', action='store_true', help='Ignore HTTP proxy settings for this request only; system/TUN routing is unchanged')
     args = parser.parse_args()
     identifier = args.doi
     if args.paper_id is not None:
@@ -189,7 +205,10 @@ def main():
         identifier = json.loads(row[0]).get('doi') if row else None
     if not doi(identifier):
         parser.error('Provide a valid DOI or an existing paper with a DOI')
-    print(json.dumps(probe(args.provider, identifier, credentials(), args.live), ensure_ascii=False, indent=2))
+    result = probe(args.provider, identifier, credentials(), args.live,
+                   fetch=lambda req: transport(req, direct=args.direct))
+    result['http_proxy_mode'] = 'disabled_for_request' if args.direct else 'system'
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == '__main__':

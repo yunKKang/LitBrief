@@ -2,10 +2,11 @@ import json
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from publisher_probe import parse, probe, request_for, error_status, KEY_NAMES, NoRedirect
+from publisher_probe import parse, probe, request_for, error_status, KEY_NAMES, NoRedirect, transport
+from urllib.request import ProxyHandler
 
 
 class PublisherProbeTests(unittest.TestCase):
@@ -44,6 +45,29 @@ class PublisherProbeTests(unittest.TestCase):
         self.assertEqual(error_status(403, b'Forbidden'), 'forbidden_unknown')
         self.assertEqual(error_status(429, b'Forbidden'), 'rate_limited')
         self.assertEqual(error_status(401, b'Invalid key'), 'authentication_failed')
+
+    def test_401_authorization_error_is_not_an_invalid_key_claim(self):
+        payload = b'<service-error><status><statusCode>AUTHORIZATION_ERROR</statusCode></status></service-error>'
+        result = probe('scopus', '10.1000/a', {KEY_NAMES[0]: 'private-value'}, True,
+                       lambda r: (401, payload, {}))
+        self.assertEqual(result['status'], 'not_entitled')
+        self.assertEqual(result['provider_error_code'], 'AUTHORIZATION_ERROR')
+        self.assertEqual(error_status(401, b'AUTHENTICATION_ERROR'), 'authentication_failed')
+        self.assertEqual(error_status(403, b'AUTHENTICATION_ERROR'), 'authentication_failed')
+
+    def test_direct_transport_only_changes_its_own_proxy_handler(self):
+        response=Mock(status=200)
+        response.read.return_value=b'{}'
+        response.__enter__=Mock(return_value=response)
+        response.__exit__=Mock(return_value=False)
+        with patch('publisher_probe.build_opener') as factory:
+            factory.return_value.open.return_value=response
+            req=request_for('europepmc','10.1000/a',{})
+            self.assertEqual(transport(req,direct=True)[0],200)
+            proxy=next(h for h in factory.call_args.args if isinstance(h,ProxyHandler))
+            self.assertEqual(proxy.proxies,{})
+            transport(req)
+            self.assertFalse(any(isinstance(h,ProxyHandler) for h in factory.call_args.args))
 
 
 if __name__ == '__main__':
