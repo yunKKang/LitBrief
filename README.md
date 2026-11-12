@@ -67,7 +67,19 @@ python scripts/publisher_probe.py --provider scopus --doi 10.1038/s41893-025-016
 # 确认权限后才加 --live；具体步骤见API访问指南
 ```
 
-本轮已核验官方接口机制，Europe PMC剩余3条DOI查询均未命中记录。Elsevier key已实测：Scopus授权拒绝、ScienceDirect认证拒绝，校园网下忽略HTTP代理对照仍相同；Springer尚未取得key。现有可用公共路径优先保留，接口只补剩余缺口，暂不付费Premium。完整申请条件、南京大学联系入口和数据处理范围见文档，不承诺零遗漏。
+ES&T已修复迁移后的官方RSS地址，保存的本地实测两条feed分别解析20和91条题录；这仍不代表完整时间窗覆盖。摘要补全已统一为Nature正式摘要区→OpenAlex→Europe PMC（非Nature跳过首步），仅处理已通过标题初筛的启用来源；每个请求串行、无即时重试。
+
+暂未索引、无摘要字段或临时请求失败最多尝试3轮，间隔1天、再3天；遵守更长的Retry-After。来源拒绝或限流会持久暂停该提供方，身份冲突/解析失败转人工核对；暂停不等于排除文章。`workflow.py status` 按日常、历史、日期待核和停用来源列出队列，几千条历史题录不会自动进入日常AI。
+
+2026-11-12单篇实测：唯一日常待补记录在OpenAlex和Europe PMC均匹配DOI但没有摘要字段，保留待补并安排有限重查；没有调用AI。Elsevier key已确认只提取原Markdown中的密钥，未把全文当key。此前接口实测仍为Scopus授权拒绝、ScienceDirect认证拒绝，校园网下忽略HTTP代理对照相同；Springer尚未取得key。现有可用公共路径优先保留，接口只补剩余缺口，暂不付费Premium。完整申请条件、南京大学联系入口和数据处理范围见文档，不承诺零遗漏。
+
+确认访问条件或材料已修复后，可显式恢复指定队列；此命令仅重置本地暂停，不联网、不调用AI。只恢复文章不会绕过仍生效的提供方暂停：
+
+```powershell
+python scripts/workflow.py resume-enrichment --ids <文章编号>
+# 已核实提供方恢复可用时，才同时清除对应提供方暂停
+python scripts/workflow.py resume-enrichment --ids <文章编号> --providers openalex
+```
 
 ## 文档与下一步
 

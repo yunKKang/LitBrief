@@ -148,7 +148,8 @@ def paper_form(db, paper_id, token):
         raise ValueError('Unknown paper')
     data, result = json.loads(row['data']), json.loads(row['result'] or '{}')
     selected = json.loads(row['topics'])
-    material_labels={'not_attempted':'尚未尝试补全','available':'已有正式摘要','not_available':'已尝试的补充源未提供摘要','access_blocked':'补充源访问受限','request_failed':'请求失败，尚未确认可得性','parser_failed':'已取得页面，但摘要或身份解析待核'}
+    material_labels={'not_attempted':'尚未尝试补全','available':'已有正式摘要','not_available':'已尝试的补充源未提供摘要','access_blocked':'补充源访问受限','request_failed':'请求失败，尚未确认可得性','parser_failed':'摘要解析待核','record_not_found':'补充源尚无该记录','abstract_missing':'已匹配记录，但无摘要字段','rate_limited':'来源限流，延后补充','content_mismatch':'返回身份或摘要冲突，需人工核对','provider_deferred':'来源已暂停，本轮延后处理'}
+    schedule=db.execute('SELECT attempts,next_attempt_at,last_status FROM enrichment_schedule WHERE paper_id=?',(paper_id,)).fetchone()
     evidence = result.get('evidence', '')
     if isinstance(evidence, list):
         evidence = '\n\n'.join(evidence)
@@ -162,6 +163,8 @@ def paper_form(db, paper_id, token):
     body += '</fieldset><label>审核备注<textarea name="note" rows="2"></textarea></label><div class="actions"><button name="action" value="approve">通过审核</button><button class="secondary" name="action" value="reject">排除</button><button class="secondary" name="action" value="requeue">重新排队</button></div><p class="muted">通过审核后仍需组期与发布。重新排队不会立即调用模型。</p></form></section></div>'
     if not data.get('abstract'):
         body += f'<section><h2>补充经核实的摘要</h2><p class="notice">补全状态：{h(material_labels.get(row["enrichment_state"],row["enrichment_state"]))}。这不代表出版社一定没有摘要。{"当前还需核实 DOI 或文章页面。" if not data.get("doi") else ""}</p><p>可在高校认证浏览器中核对原文后粘贴。只填正式 Abstract，不填 RSS 导读或搜索摘要。</p><form method="post" action="/abstract"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{paper_id}"><input type="hidden" name="revision" value="{row["revision"]}"><label>原文网页 URL<input type="url" name="source_url" required></label><label>正式摘要<textarea name="abstract" rows="8" required></textarea></label><label class="check"><input type="checkbox" name="verified" value="yes" required>已核对标题和 DOI，确认摘要属于本篇文章</label><button>保存摘要并进入待筛选队列</button></form></section>'
+    if schedule and row['state']=='awaiting_abstract':
+        body+=f'<p class="notice">补充尝试 {schedule["attempts"]} 次 · '+(f'下次尝试：{h(schedule["next_attempt_at"])}' if schedule['next_attempt_at'] else '自动尝试已暂停，请人工核对来源或材料。')+'</p>'
     return body
 
 

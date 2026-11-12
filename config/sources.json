@@ -261,13 +261,21 @@
     "seed_issn": "0013-936X",
     "display": "重点文献",
     "publisher_family": "Environmental Science & Technology",
-    "homepage": "https://pubs.acs.org/journal/esthag",
+    "homepage": "https://pubs.acs.org/esthag",
     "publisher_sources": [
       {
         "kind": "rss",
-        "url": "https://pubs.acs.org/action/showFeed?type=etoc&feed=rss&jc=esthag",
-        "role": "latest-item cross-check",
-        "discovery_note": "Candidate publisher endpoint; acceptance requires parsed scholarly items and identity check, not HTTP 200 alone."
+        "url": "https://pubs.acs.org/rss/esthag/asap.xml",
+        "role": "online-first discovery",
+        "discovery_note": "Official https://pubs.acs.org/pages/rss links after platform migration; rolling feed is not full-window coverage.",
+        "expected_feed_title": "Environmental Science & Technology ASAP"
+      },
+      {
+        "kind": "rss",
+        "url": "https://pubs.acs.org/rss/esthag/currentIssue.xml",
+        "role": "issue cross-check",
+        "discovery_note": "Official https://pubs.acs.org/pages/rss links after platform migration; rolling feed is not full-window coverage.",
+        "expected_feed_title": "Environmental Science & Technology Current Issue"
       }
     ]
   },

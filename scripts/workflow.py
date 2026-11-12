@@ -101,54 +101,21 @@ def collect(db, only=None):
 
 def status(db):
     counts = {r[0]: r[1] for r in db.execute('SELECT state,count(*) FROM papers GROUP BY state')}
+    cohorts = {}
+    for r in db.execute('SELECT cohort,state,count(*) FROM papers GROUP BY cohort,state'):
+        cohorts.setdefault(r[0], {})[r[1]] = r[2]
     size = sum(p.stat().st_size for p in (ROOT / 'outputs').rglob('*') if p.is_file())
     cfg = json.loads((ROOT / 'config/runtime.json').read_text(encoding='utf-8'))
-    return {'papers': counts, 'issues': [dict(r) for r in db.execute('SELECT * FROM issues ORDER BY id DESC')],
+    return {'papers': counts, 'papers_by_cohort': cohorts,
+            'issues': [dict(r) for r in db.execute('SELECT * FROM issues ORDER BY id DESC')],
+            'abstract_provider_holds': [dict(r) for r in db.execute('SELECT * FROM enrichment_holds ORDER BY provider')],
+            'abstract_queue': [dict(r) for r in db.execute("SELECT enrichment_state,count(*) AS count FROM papers WHERE state='awaiting_abstract' AND cohort='monitoring' GROUP BY enrichment_state")],
             'storage_bytes': size, 'storage_warning': size >= cfg['storage_warning_gb'] * 1024 ** 3}
 
 
 def enrich(db, max_items):
-    from probe_abstracts import AbstractSection, reconstruct
-    if max_items < 1:raise ValueError('max-items must be positive')
-    count=attempted=0
-    with worker_lock(DATA):
-        http=audit.HTTP(DATA/'enrichment'/now().replace(':','').replace('+','_'))
-        rows=db.execute("SELECT * FROM papers WHERE state='awaiting_abstract' AND cohort='monitoring' AND enrichment_state='not_attempted' ORDER BY id").fetchall()
-        for row in rows:
-            paper=json.loads(row['data']);result=json.loads(row['result'] or '{}')
-            if not result.get('title_screened') or not paper.get('doi'):continue
-            if attempted>=max_items:break
-            attempted+=1;abstract=None;origin=None;requests=[]
-            if paper['doi'].startswith('10.1038/'):
-                url='https://www.nature.com/articles/'+paper['doi'].split('/',1)[1]
-                meta,body=http.get(url,'text/html');parser=AbstractSection()
-                if meta['ok']:parser.feed(body.decode('utf-8',errors='replace'))
-                if parser.citation_doi==paper['doi']:
-                    abstract=audit.plain(''.join(parser.text)) or None
-                    if abstract:origin='Nature publisher Abstract section'
-                requests.append({'url':url,'status':meta.get('status')})
-            if not abstract:
-                url='https://api.openalex.org/works/https://doi.org/'+paper['doi']
-                meta,body=http.get(url,'application/json')
-                requests.append({'url':url,'status':meta.get('status')})
-                if meta['ok']:
-                    try:
-                        payload=json.loads(body)
-                        if audit.doi(payload.get('doi'))==paper['doi']:
-                            abstract=reconstruct(payload.get('abstract_inverted_index'))
-                            if abstract:origin='OpenAlex, exact DOI verified'
-                    except (ValueError,TypeError):pass
-            status='available' if abstract else ('access_blocked' if any(r['status'] in {401,403,429} for r in requests) else 'not_available' if all(r['status']==200 for r in requests) else 'request_failed')
-            with db:
-                if abstract:
-                    pid=ingest(db,{**paper,'abstract':abstract,'abstract_source':origin,'abstract_url':url},str(http.output))
-                    # Preserve the title-stage pass when adding the missing evidence.
-                    db.execute('UPDATE papers SET result=? WHERE id=?',(row['result'],pid))
-                    count+=1
-                db.execute('UPDATE papers SET enrichment_state=? WHERE id=?',(status,row['id']))
-                db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',(now(),'enrich',status,json.dumps({'paper_id':row['id'],'requests':requests})))
-            print('abstract',row['id'],status,flush=True)
-    return {'attempted':attempted,'abstracts_added':count}
+    from enrichment import run
+    return run(db, max_items)
 
 
 def main():
@@ -163,6 +130,9 @@ def main():
     col.add_argument('--only', nargs='+')
     en = sub.add_parser('enrich')
     en.add_argument('--max-items', required=True, type=int)
+    recovery = sub.add_parser('resume-enrichment', help='After inspection, clear selected holds; no network or AI')
+    recovery.add_argument('--ids', nargs='+', type=int, default=[])
+    recovery.add_argument('--providers', nargs='+', choices=['nature', 'openalex', 'europepmc'], default=[])
     ai = sub.add_parser('screen')
     ai.add_argument('--max-calls', type=int, required=True)
     ai.add_argument('--max-tokens', type=int, required=True)
@@ -184,6 +154,9 @@ def main():
             result = collect(db, args.only)
         elif args.command == 'enrich':
             result = enrich(db, args.max_items)
+        elif args.command == 'resume-enrichment':
+            from enrichment import resume
+            result = resume(db, args.ids, args.providers)
         elif args.command == 'screen':
             result = screen_batch(db, args.max_calls, args.max_tokens, ids=args.ids)
         elif args.command == 'sync-sources':

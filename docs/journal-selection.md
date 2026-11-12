@@ -239,3 +239,5 @@ ES&T 本批37条中的3条AI推荐均被用户否定，说明当前主题筛选�
 用户确认先排除已有可用采集路径，再攻克剩余期刊。13本Nature系列保留现有公开目录/摘要路径；Science、Science Advances、PNAS、Earth's Future保留RSS与已有摘要路径，仅核差集；重点补ES&T发现入口和ScienceDirect9刊的正式摘要/目录缺口。不把网页403或API拒绝理解成OA文章需要付费。具体逐刊证据见 [来源缺口清单](source-access.md)。
 
 用户同意月度机制可行，优先沿用Applied Energy与Building and Environment两刊试验建议，尚未修改周期配置。采集和筛选优先本地/校内执行，外部服务器仅接收审核后的静态站点；不再以校外机构Token为前提。两篇PNAS Comment/Commentary已核类型并排除，当前日常待补摘要1篇、类型排除22篇，其余状态不变。
+
+同日后续实现：ES&T已换为ACS官方迁移后的ASAP与Current Issue RSS，保存的实测分别解析20和91条，新增刊名身份校验；尚不构成完整窗口覆盖。公共摘要补全已统一，索引延迟最多3轮，拒绝/限流按提供方持久暂停，身份/解析问题人工核对。唯一日常待补Discussion在OpenAlex与Europe PMC均匹配DOI但缺摘要字段，未推断为无摘要，也未送AI。期刊名单、27刊当前周期与人工发布要求均未改变。

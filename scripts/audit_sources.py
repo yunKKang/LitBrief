@@ -106,10 +106,14 @@ def selected_journals():
 
 
 class HTTP:
-    def __init__(self, output, retry_failed=False):
+    def __init__(self, output, retry_failed=False, max_attempts=3, interval_seconds=1):
+        if max_attempts < 1 or interval_seconds < 0:
+            raise ValueError('HTTP attempt and interval limits must be valid')
         self.output = output
         self.retry_failed = retry_failed
         self.last = {}
+        self.max_attempts = max_attempts
+        self.interval_seconds = interval_seconds
 
     def get(self, url, accept='*/*'):
         key = hashlib.sha256(url.encode()).hexdigest()
@@ -123,8 +127,8 @@ class HTTP:
             previous_attempts = meta.get('attempts', [])
         host = urlsplit(url).netloc
         attempts = list(previous_attempts)
-        for attempt in range(3):
-            delay = (1.5 if host == 'api.crossref.org' else 1.0) - (time.monotonic() - self.last.get(host, 0))
+        for attempt in range(self.max_attempts):
+            delay = max(self.interval_seconds, 1.5 if host == 'api.crossref.org' else 1.0) - (time.monotonic() - self.last.get(host, 0))
             if delay > 0:
                 time.sleep(delay)
             self.last[host] = time.monotonic()
@@ -141,15 +145,17 @@ class HTTP:
                     meta.update(ok=True, status=response.status, final_url=response.url, content_type=response.headers.get('Content-Type', ''))
             except HTTPError as exc:
                 headers = dict(exc.headers)
-                body = exc.read(1024 * 1024)
+                with exc:
+                    body = exc.read(1024 * 1024)
                 meta.update(ok=False, status=exc.code, error=str(exc), final_url=exc.url)
             except (URLError, TimeoutError, OSError, ValueError) as exc:
                 meta.update(ok=False, status=None, error=f'{type(exc).__name__}: {exc}')
+            meta['retry_after'] = next((v for k, v in headers.items() if k.lower() == 'retry-after'), None)
             attempts.append({k: v for k, v in meta.items() if k != 'cache_key'})
-            if meta['ok'] or meta['status'] not in (429, 500, 502, 503, 504) or attempt == 2:
+            if meta['ok'] or meta['status'] not in (429, 500, 502, 503, 504) or attempt == self.max_attempts - 1:
                 break
             try:
-                wait = float(headers.get('Retry-After', 5 * (attempt + 1)))
+                wait = float(meta['retry_after'] or 5 * (attempt + 1))
             except ValueError:
                 wait = 10
             if wait > 30:
@@ -329,6 +335,10 @@ def run_publisher(args):
             if meta['ok']:
                 try:
                     result['parsed'] = parse_feed(body)
+                    expected = source.get('expected_feed_title')
+                    if expected and result['parsed']['feed_title'] != expected:
+                        result['parsed'] = None
+                        result['parse_error'] = 'Feed journal identity mismatch'
                 except (ET.ParseError, ValueError) as exc:
                     result['parse_error'] = str(exc)
             results.append(result)

@@ -80,6 +80,13 @@ def connect(path=DATA / 'library.sqlite3'):
         db.execute("ALTER TABLE papers ADD COLUMN enrichment_state TEXT NOT NULL DEFAULT 'not_attempted'")
         db.execute("UPDATE papers SET enrichment_state='available' WHERE length(json_extract(data,'$.abstract'))>0")
         db.commit()
+    db.execute('''CREATE TABLE IF NOT EXISTS enrichment_schedule (
+      paper_id INTEGER PRIMARY KEY REFERENCES papers(id), input_digest TEXT NOT NULL,
+      attempts INTEGER NOT NULL, next_attempt_at TEXT, last_status TEXT NOT NULL,
+      updated_at TEXT NOT NULL)''')
+    db.execute('''CREATE TABLE IF NOT EXISTS enrichment_holds (
+      provider TEXT PRIMARY KEY, status TEXT NOT NULL, retry_at TEXT)''')
+    db.commit()
     return db
 
 

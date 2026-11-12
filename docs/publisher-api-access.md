@@ -81,6 +81,7 @@ python scripts/publisher_probe.py --provider springer --paper-id 2193 --live
 
 - 官方Elsevier认证、摘要/文章接口、校外访问和当前TDM条款已打开核对；Springer产品页的Basic计划与支持字段已核对。开发者门户部分文档需前端渲染，未假称看到了登录后的完整表单。
 - 初始缺key检查后，用户提供Elsevier key，已配置在忽略的.env并进行6次串行诊断请求。系统HTTP代理路径与显式直连结果一致：Scopus 401/AUTHORIZATION_ERROR；ScienceDirect 403/AUTHENTICATION_ERROR。未取得摘要，不能单据此判为付费问题或key无效；Springer仍待申请。
+- 后续本地比对确认配置值是原Markdown内唯一的32位密钥候选，未将文档全文作为key，未打印或提交凭证。没有新的权限证据，因此没有反复重测失败接口。
 - Europe PMC以core串行查询当前剩余3个DOI，均为HTTP200、record_not_found；结果在本地outputs/access-diagnostics，不含原文摘要。
 - 解析和安全检查用虚构响应验证；不代表Scopus／ScienceDirect／Springer已经真实联通。
 
