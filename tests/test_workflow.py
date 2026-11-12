@@ -78,7 +78,7 @@ class WorkflowTests(unittest.TestCase):
         self.approve(pid)
         issue = build_issue(self.db, date(2026, 11, 11))
         output = self.root / 'public'
-        export_site(self.db, output)
+        output = export_site(self.db, self.root / 'public')
         self.assertFalse((output / 'papers' / f'{pid}.html').exists())
         font_css=(output/'fonts/fonts.css').read_text(encoding='utf-8')
         self.assertIn('Reader WenKai',font_css)
@@ -86,13 +86,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(list((output/'fonts').glob('*.woff2'))),2)
         publish_issue(self.db, issue)
         self.assertEqual(build_issue(self.db, date(2026,11,12)), issue)
-        export_site(self.db, output)
+        output = export_site(self.db, self.root / 'public')
         article = (output / 'papers' / f'{pid}.html').read_text(encoding='utf-8')
         self.assertIn('住房改造', article)
         self.assertNotIn('PRIVATE_ABSTRACT', article)
         self.assertNotIn('checked', article)
         self.add({**PAPER, 'abstract': 'A changed publisher abstract.'})
-        export_site(self.db, output)
+        output = export_site(self.db, self.root / 'public')
         self.assertEqual(article, (output / 'papers' / f'{pid}.html').read_text(encoding='utf-8'))
         self.assertEqual(build_issue(self.db, date(2026,11,15)), '2026-11-15')
         self.assertEqual(self.db.execute('SELECT count(*) FROM issue_items').fetchone()[0], 1)
@@ -105,7 +105,41 @@ class WorkflowTests(unittest.TestCase):
         build_issue(self.db, date(2026,11,11))
         self.add({**PAPER, 'abstract': 'Updated abstract from publisher.'})
         self.assertEqual(self.db.execute('SELECT count(*) FROM issue_items').fetchone()[0], 0)
-        self.assertEqual(self.db.execute('SELECT state FROM papers').fetchone()[0], 'pending')
+        self.assertEqual(self.db.execute('SELECT state FROM papers').fetchone()[0], 'needs_review')
+
+    def test_material_update_preserves_human_rejection(self):
+        pid = self.add()
+        review(self.db, pid, 'reject', '', [], 'Not relevant', 1)
+        self.add({**PAPER, 'abstract': 'Updated publisher evidence.'})
+        row = self.db.execute('SELECT * FROM papers WHERE id=?', (pid,)).fetchone()
+        self.assertEqual(row['state'], 'rejected')
+        self.assertEqual(row['human_decision'], 'reject')
+        self.assertEqual(row['material_changed'], 1)
+        review(self.db, pid, 'requeue', '', [], 'Explicit reconsideration', row['revision'])
+        row = self.db.execute('SELECT * FROM papers WHERE id=?', (pid,)).fetchone()
+        self.assertEqual(row['state'], 'pending')
+        self.assertEqual(row['human_decision'], '')
+
+    def test_export_failure_preserves_previous_complete_release(self):
+        from unittest.mock import patch
+        import webapp
+        root = self.root / 'public'
+        old = export_site(self.db, root)
+        old_files = {p.relative_to(old): p.read_bytes() for p in old.rglob('*') if p.is_file()}
+        pointer = (root / 'latest.json').read_bytes()
+        original = webapp.atomic_write
+        def fail(path, text):
+            if path.name == 'archive.html':
+                raise OSError('Simulated interruption')
+            original(path, text)
+        with patch.object(webapp, 'atomic_write', side_effect=fail):
+            with self.assertRaises(OSError):
+                export_site(self.db, root)
+        self.assertEqual(pointer, (root / 'latest.json').read_bytes())
+        self.assertEqual(old_files, {p.relative_to(old): p.read_bytes() for p in old.rglob('*') if p.is_file()})
+        latest = export_site(self.db, root)
+        self.assertNotEqual(old, latest)
+        self.assertTrue((latest / 'index.html').exists())
 
     def test_four_day_period_crosses_month_and_year(self):
         self.assertEqual(period(date(2026,11,14)), ('2026-11-11','2026-11-14'))
@@ -131,8 +165,8 @@ class WorkflowTests(unittest.TestCase):
         self.approve(pid)
         issue = build_issue(self.db, date(2026,11,11))
         publish_issue(self.db,issue)
-        export_site(self.db,self.root/'public')
-        page = (self.root/'public/papers'/f'{pid}.html').read_text(encoding='utf-8')
+        release = export_site(self.db,self.root/'public')
+        page = (release/'papers'/f'{pid}.html').read_text(encoding='utf-8')
         self.assertNotIn('<script>alert',page)
         self.assertNotIn('javascript:',page)
 
@@ -142,56 +176,6 @@ class WorkflowTests(unittest.TestCase):
         (private / '.env').write_text('not-a-real-secret')
         with self.assertRaises(ValueError):
             export_site(self.db, private)
-
-    def test_bounded_worker_keeps_unprocessed_candidates(self):
-        from unittest.mock import patch
-        from workflow import screen_batch
-        one = self.add()
-        two = self.add({**PAPER, 'doi':'10.1000/two','urls':['https://example.org/two']})
-        cache = self.root / 'cache'
-        def runner(paper, config, folder):
-            folder.mkdir(exist_ok=True)
-            with (folder/'usage.jsonl').open('a') as stream:
-                stream.write(json.dumps({'usage':{'total_tokens':150}})+'\n')
-            return {'decision':'exclude','reason':'test','summary':'','evidence':[]}
-        with patch('workflow.DATA',self.root), patch('workflow.settings',return_value={}):
-            stats=screen_batch(self.db,5,100,cache=cache,runner=runner)
-        self.assertEqual(stats['processed'],1)
-        self.assertEqual(stats['new_tokens'],150)
-        self.assertEqual(self.db.execute('SELECT state FROM papers WHERE id=?',(two,)).fetchone()[0],'pending')
-
-    def test_worker_error_is_not_automatically_retried(self):
-        from unittest.mock import patch
-        from workflow import screen_batch
-        pid=self.add()
-        def runner(*args):
-            raise ValueError('Invalid model result')
-        with patch('workflow.DATA',self.root), patch('workflow.settings',return_value={}):
-            with self.assertRaises(RuntimeError):
-                screen_batch(self.db,5,100,cache=self.root/'cache',runner=runner)
-            self.assertEqual(screen_batch(self.db,5,100,cache=self.root/'cache',runner=runner)['processed'],0)
-        self.assertEqual(self.db.execute('SELECT state FROM papers WHERE id=?',(pid,)).fetchone()[0],'ai_error')
-
-    def test_inactive_source_is_retained_without_paid_processing_or_approval(self):
-        from unittest.mock import patch, Mock
-        from workflow import screen_batch
-        pid = self.add()
-        before = dict(self.db.execute('SELECT * FROM papers WHERE id=?', (pid,)).fetchone())
-        runner = Mock(side_effect=AssertionError('Inactive source must never call a provider'))
-        with patch('library.registry', return_value={}), patch('workflow.registry', return_value={}), \
-             patch('workflow.DATA', self.root), patch('workflow.settings', return_value={}):
-            self.assertEqual(archive_inactive_sources(self.db), 1)
-            self.assertEqual(archive_inactive_sources(self.db), 0)
-            after = dict(self.db.execute('SELECT * FROM papers WHERE id=?', (pid,)).fetchone())
-            self.assertEqual(after['cohort'], 'inactive_source')
-            for key in ('data', 'result', 'state', 'topics'):
-                self.assertEqual(after[key], before[key])
-            event = json.loads(self.db.execute("SELECT detail FROM runs WHERE kind='source-retirement'").fetchone()[0])
-            self.assertEqual(event['records'][0]['cohort'], before['cohort'])
-            self.assertEqual(screen_batch(self.db, 1, 100, runner=runner)['processed'], 0)
-            with self.assertRaises(ValueError):
-                self.approve(pid)
-        runner.assert_not_called()
 
     def test_source_retirement_waits_for_in_flight_request(self):
         from unittest.mock import patch

@@ -14,8 +14,8 @@
 python scripts/workflow.py status
 python scripts/workflow.py backup
 # 完成人工审核、组期与发布确认后才有可导出的真实期次
-python scripts/workflow.py export
-python -m http.server 8767 --bind 127.0.0.1 --directory outputs/public
+$release = python scripts/workflow.py export | ConvertFrom-Json
+python -m http.server 8767 --bind 127.0.0.1 --directory $release.public_directory
 ```
 
 每次付费筛选显式设定token停止阈值。阈值在请求之间检查，单次请求可能超过剩余额度；没有单价时只报告tokens，不虚构金额。AI失败不自动重试。摘要补全的延时重试与提供方暂停由SQLite持久记录；确认恢复后通过 `resume-enrichment` 显式解除，命令见README。
@@ -27,7 +27,7 @@ python -m http.server 8767 --bind 127.0.0.1 --directory outputs/public
 1. 核实课题组服务器及现有Nginx站点，选定子域名，添加对应A/AAAA记录；只使用实际可用地址。
 2. 在服务器准备 `/var/www/literaturehot/releases/<版本>/` 和ACME验证目录。沿用现有运维账户与最小写入权限，网站目录不得包含 `.env`、SQLite、日志或源码。
 3. 核对 `nginx.conf.example` 的域名和路径。首次先提供HTTP的ACME验证入口，签发证书后再安装完整HTTPS配置；未有证书时不能直接启用示例中的TLS块。运行 `nginx -t` 成功后reload，保留原课题组站点配置。
-4. 将本地 `outputs/public/` 的内容完整复制到新的release目录，包含字体与许可。核对文件完整、实际文章内容和往期链接后，以原子替换符号链接的方式将 `/var/www/literaturehot/current` 指向该release，保留上一版本用于回滚。
+4. 将 `export` 返回的 `public_directory`（`outputs/public/releases/<版本>/`）内容完整复制到服务器新的release目录；不要复制容器根目录或失败版本，包含字体与许可。核对文件完整、实际文章内容和往期链接后，以原子替换符号链接的方式将 `/var/www/literaturehot/current` 指向该release，保留上一版本用于回滚。
 5. 验证HTTPS、主题切换、文章/往期链接和手机阅读；核对私有路径无法访问。服务器不安装审核后台、采集timer或付费AI任务。
 6. 每四天完成本地审核后重复导出和release切换。公开更新频率与发现频率分开；应每天检查滚动RSS以减少遗漏，发现流程尚需连续两个四天周期验收，不能承诺零遗漏。
 
@@ -46,3 +46,5 @@ python -m http.server 8767 --bind 127.0.0.1 --directory outputs/public
 `literaturehot-collect.service`、`.timer` 和 `literaturehot-review.service` 仅为将来获准的校内常开Linux节点预留，**不在外部静态网站服务器安装**。本轮未启用这些模板，也未创建Windows定时任务。
 
 启用前应现场核实采集权限、Python路径、独立用户、`/opt/literaturehot` 工作目录与 `outputs/` 写入权限，测试真实发现入口；审核服务仍只监听回环地址，通过SSH隧道访问。collect timer仅采集并准备草稿，不调用AI、不发布；四天窗口用固定锚点计算。日常主路径仍由同一进程锁保护，残留 `worker.lock` 必须先核实进程再处理。
+
+当前内容确认仍走测试期人工流程；最终将由独立的agent调度完成筛选、核验、组期与发布，用户只需对最终结果提供可选反馈。自动发布与定时调度尚未实现或启用，不依赖桌面Codex会话。备份恢复已用合成数据库验证，真实生产节点和远端release切换仍需部署验收。

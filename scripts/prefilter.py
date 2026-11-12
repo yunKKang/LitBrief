@@ -19,7 +19,8 @@ def exclusion(paper):
 def run(db,cohort='monitoring'):
     count=0
     with db:
-        rows=db.execute("SELECT * FROM papers WHERE cohort=? AND state IN ('pending','awaiting_abstract')",(cohort,)).fetchall()
+        db.execute('BEGIN IMMEDIATE')
+        rows=db.execute("SELECT * FROM papers WHERE cohort=? AND human_decision='' AND state IN ('pending','awaiting_abstract')",(cohort,)).fetchall()
         for r in rows:
             reason=exclusion(json.loads(r['data']))
             if not reason:continue

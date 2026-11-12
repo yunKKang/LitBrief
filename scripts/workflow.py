@@ -8,57 +8,6 @@ from types import SimpleNamespace
 
 import audit_sources as audit
 from library import DATA, ROOT, connect, import_audit, ingest, now, today, worker_lock, build_issue, registry, archive_inactive_sources
-from screen_paper import screen, settings
-
-
-def screen_batch(db, max_calls, max_tokens, cache=ROOT / 'outputs/ai-trial', runner=screen, ids=None):
-    if max_calls < 1 or max_tokens < 1:
-        raise ValueError('A positive per-run call limit and token stop threshold are required')
-    config = settings()
-    completed = 0
-    spent = 0
-    with worker_lock(DATA):
-        rows = db.execute("SELECT * FROM papers WHERE state='pending' ORDER BY id").fetchall()
-        active = registry()
-        rows = [row for row in rows if row['journal'] in active]
-        if ids:
-            rows = [row for row in rows if row['id'] in ids]
-        for row in rows:
-            if completed >= max_calls or spent >= max_tokens:
-                break
-            # Persist claim before networking: a crash must not trigger an automatic paid retry.
-            with db:
-                changed = db.execute("UPDATE papers SET state='screening' WHERE id=? AND revision=? AND state='pending'", (row['id'], row['revision'])).rowcount
-            if not changed:
-                continue
-            log = Path(cache) / 'usage.jsonl'
-            offset = log.stat().st_size if log.exists() else 0
-            try:
-                result = runner(json.loads(row['data']), config, Path(cache))
-                with db:
-                    db.execute("UPDATE papers SET state='awaiting_review',result=?,revision=revision+1,updated_at=? WHERE id=? AND revision=? AND state='screening'",
-                               (json.dumps(result, ensure_ascii=False), now(), row['id'], row['revision']))
-                completed += 1
-            except Exception as exc:
-                with db:
-                    db.execute("UPDATE papers SET state='ai_error',revision=revision+1 WHERE id=? AND revision=? AND state='screening'", (row['id'], row['revision']))
-                    db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',
-                               (now(), 'screen', 'failed', json.dumps({'paper_id': row['id'], 'error_type': type(exc).__name__})))
-                raise RuntimeError(f'AI failed for paper {row["id"]}; inspect provider and explicitly requeue. No retry.') from None
-            if log.exists():
-                with log.open('rb') as stream:
-                    stream.seek(offset)
-                    for line in stream:
-                        event = json.loads(line)
-                        usage = event.get('usage') or {}
-                        if not isinstance(usage.get('total_tokens'), int):
-                            raise RuntimeError('Provider omitted usage; stop this batch for budget review')
-                        spent += usage['total_tokens']
-        with db:
-            db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',
-                       (now(), 'screen', 'completed', json.dumps({'papers': completed, 'tokens': spent})))
-    return {'processed': completed, 'new_tokens': spent,
-            'note': 'Token threshold is checked between requests; one request may exceed remaining tokens.'}
 
 
 def collect(db, only=None):
@@ -107,6 +56,7 @@ def status(db):
     size = sum(p.stat().st_size for p in (ROOT / 'outputs').rglob('*') if p.is_file())
     cfg = json.loads((ROOT / 'config/runtime.json').read_text(encoding='utf-8'))
     return {'papers': counts, 'papers_by_cohort': cohorts,
+            'unresolved_ai_requests': [dict(r) for r in db.execute("SELECT id,mode,status,usage_json,detail FROM ai_requests WHERE status NOT IN ('applied','acknowledged') ORDER BY created_at")],
             'issues': [dict(r) for r in db.execute('SELECT * FROM issues ORDER BY id DESC')],
             'abstract_provider_holds': [dict(r) for r in db.execute('SELECT * FROM enrichment_holds ORDER BY provider')],
             'abstract_queue': [dict(r) for r in db.execute("SELECT enrichment_state,count(*) AS count FROM papers WHERE state='awaiting_abstract' AND cohort='monitoring' GROUP BY enrichment_state")],
@@ -143,6 +93,11 @@ def main():
     exp = sub.add_parser('export')
     exp.add_argument('--output', type=Path, default=ROOT / 'outputs/public')
     sub.add_parser('backup')
+    recover = sub.add_parser('recover-ai', help='Validate and apply a saved batch response without networking')
+    recover.add_argument('--request-id', required=True)
+    ack = sub.add_parser('acknowledge-ai', help='Record manual billing verification before any explicit requeue')
+    ack.add_argument('--request-id', required=True)
+    ack.add_argument('--note', required=True)
     args = p.parse_args()
     with closing(connect(args.db)) as db:
         if args.command == 'import-audit':
@@ -158,7 +113,14 @@ def main():
             from enrichment import resume
             result = resume(db, args.ids, args.providers)
         elif args.command == 'screen':
-            result = screen_batch(db, args.max_calls, args.max_tokens, ids=args.ids)
+            from batch_screen import run
+            result = run(db, args.max_tokens, group_size=1, max_groups=args.max_calls, ids=args.ids)
+        elif args.command == 'recover-ai':
+            from batch_screen import recover
+            result = recover(db, args.request_id)
+        elif args.command == 'acknowledge-ai':
+            from batch_screen import acknowledge
+            result = acknowledge(db, args.request_id, args.note)
         elif args.command == 'sync-sources':
             with worker_lock(DATA):
                 result = {'archived_records': archive_inactive_sources(db)}
@@ -166,13 +128,13 @@ def main():
             result = {'draft_issue': build_issue(db)}
         elif args.command == 'export':
             from webapp import export_site
-            export_site(db, args.output)
-            result = {'public_directory': str(args.output)}
+            release = export_site(db, args.output)
+            result = {'public_directory': str(release), 'note': 'Serve or upload only this complete release, not its parent container.'}
         elif args.command == 'backup':
             backup = DATA / 'backups' / (now().replace(':', '').replace('+', '_') + '.sqlite3')
             backup.parent.mkdir(parents=True, exist_ok=True)
             import sqlite3
-            with sqlite3.connect(backup) as dest:
+            with closing(sqlite3.connect(backup)) as dest:
                 db.backup(dest)
             result = {'backup': str(backup)}
         else:

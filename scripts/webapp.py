@@ -4,12 +4,15 @@ from contextlib import closing
 from html import escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import hashlib
+from html.parser import HTMLParser
 from pathlib import Path
 import secrets
 import shutil
+from uuid import uuid4
 from urllib.parse import parse_qs, urlsplit
 
-from library import DATA, ROOT, TOPICS, build_issue, connect, publish_issue, registry, review, safe_url, ingest, today
+from library import DATA, ROOT, TOPICS, build_issue, connect, publish_issue, registry, review, safe_url, ingest, today, now, worker_lock
 from datetime import timedelta, date, datetime, timezone
 
 
@@ -32,13 +35,68 @@ def atomic_write(path, text):
 
 
 def export_site(db, target):
+    """Build an immutable release; latest.json advances only after complete validation.
+
+    The returned directory, never this container directory, is the public web root.
+    Existing flat exports are preserved during migration and never overwritten.
+    """
     target = Path(target).resolve()
     # Never allow a website exporter to write into a source/config/secret directory.
     if target == ROOT or ROOT / 'config' == target or ROOT / 'scripts' == target or target == DATA.resolve():
         raise ValueError('Export requires a dedicated public directory')
-    if target.exists() and any(p.name not in {'style.css', 'index.html', 'archive.html', 'about.html', 'issues', 'papers','fonts','tabler-icons-LICENSE.txt'} for p in target.iterdir()):
+    if target.exists() and any(p.name not in {'style.css', 'index.html', 'archive.html', 'about.html', 'issues', 'papers','fonts','tabler-icons-LICENSE.txt','releases','latest.json','latest.json.tmp','worker.lock'} for p in target.iterdir()):
         raise ValueError('Public output contains unexpected files; use a clean dedicated directory')
     target.mkdir(parents=True, exist_ok=True)
+    with worker_lock(target):
+        release = target / 'releases' / uuid4().hex
+        detail = {'directory': str(release), 'issues': []}
+        with db:
+            cur = db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',
+                             (now(), 'export', 'building', json.dumps(detail)))
+        run_id = cur.lastrowid
+        try:
+            # A single read snapshot prevents concurrent approvals changing this build.
+            with db:
+                db.execute('BEGIN')
+                detail['issues'] = [r[0] for r in db.execute("SELECT id FROM issues WHERE state='published' ORDER BY id")]
+                _render_site(db, release)
+            detail['files'] = validate_release(release)
+            atomic_write(target / 'latest.json', json.dumps({**detail, 'directory': release.relative_to(target).as_posix(), 'run_id': run_id}, ensure_ascii=False, indent=2))
+        except Exception as exc:
+            detail['error_type'] = type(exc).__name__
+            with db:
+                db.execute("UPDATE runs SET status='failed',detail=? WHERE id=?", (json.dumps(detail), run_id))
+            raise
+        with db:
+            db.execute("UPDATE runs SET status='ready',detail=? WHERE id=?", (json.dumps(detail), run_id))
+        return release
+
+
+def validate_release(folder):
+    """Validate local HTML links and assets; never follow external URLs."""
+    class Links(HTMLParser):
+        def __init__(self):
+            super().__init__(); self.urls = []
+        def handle_starttag(self, tag, attrs):
+            self.urls.extend(v for k, v in attrs if k in {'href', 'src'} and v)
+    for name in ('index.html', 'archive.html', 'about.html', 'style.css', 'fonts/fonts.css', 'fonts/OFL.txt'):
+        if not (folder / name).is_file():
+            raise ValueError('Incomplete release')
+    for path in folder.rglob('*.html'):
+        parser = Links(); parser.feed(path.read_text('utf-8'))
+        for value in parser.urls:
+            url = urlsplit(value)
+            if url.scheme or url.netloc or not url.path:
+                continue
+            dest = (path.parent / url.path).resolve()
+            if not dest.is_relative_to(folder.resolve()) or not dest.is_file():
+                raise ValueError('Broken local release link')
+    return {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(folder.rglob('*')) if p.is_file()}
+
+
+def _render_site(db, target):
+    target.mkdir(parents=True, exist_ok=False)
     atomic_write(target / 'style.css', (ROOT / 'web/style.css').read_text(encoding='utf-8'))
     shutil.copyfile(ROOT/'web/tabler-icons-LICENSE.txt',target/'tabler-icons-LICENSE.txt')
     font_dir=ROOT/'web/fonts'
@@ -73,6 +131,7 @@ def export_site(db, target):
 
 
 STATES = {'pending': '待 AI 筛选', 'awaiting_abstract': '待补摘要', 'screening': '调用中／中断待核',
+          'needs_review': '材料变化待复审',
           'awaiting_review': '推荐待审', 'approved': '已通过', 'rejected': '人工排除', 'ai_error': '调用或校验失败',
           'ai_excluded':'AI 排除抽检', 'needs_material':'材料待核','type_excluded':'类型排除'}
 
@@ -155,6 +214,8 @@ def paper_form(db, paper_id, token):
         evidence = '\n\n'.join(evidence)
     url = ('https://doi.org/' + data['doi']) if data.get('doi') else next((safe_url(u) for u in data.get('urls', []) if safe_url(u)), '')
     body = f'<p class="eyebrow">{h(data["journal_title"])} · #{row["id"]} · {h(STATES[row["state"]])}</p><h1 class="article-title">{h(data["title"])}</h1>'
+    if row['material_changed']:
+        body += '<p class="notice">原始材料已变化，旧判断已留档。人工排除继续保留；已通过的未发布文章需要重新审核后才能组期。</p>'
     if url:
         body += f'<p><a href="{h(url)}" target="_blank" rel="noopener noreferrer">打开原文 ↗</a></p>'
     body += f'<div class="review-grid"><section><h2>摘要依据</h2><p class="muted">{h(data.get("abstract_source") or "缺少可核实摘要")}</p><div class="abstract">{h(data.get("abstract") or "保留待补材料，不凭标题生成研究结论。")}</div><h2>AI 判断</h2><p>{h(result.get("decision"))} · {h(result.get("reason"))}</p><blockquote>{h(evidence)}</blockquote></section>'
@@ -170,6 +231,12 @@ def paper_form(db, paper_id, token):
 
 def issues_page(db, token):
     body = f'<h1>期次管理</h1><p class="lead">每四个自然日一期，已发布内容保留稳定链接。</p><form method="post" action="/prepare"><input type="hidden" name="csrf" value="{token}"><button>将已通过文献加入本期草稿</button></form>'
+    last_export = db.execute("SELECT status,detail FROM runs WHERE kind='export' ORDER BY id DESC LIMIT 1").fetchone()
+    if last_export:
+        detail = json.loads(last_export['detail'])
+        label = {'ready':'完整版本已生成','building':'导出未完成，请检查进程后重试','failed':'导出失败，上一完整版本保持不变'}[last_export['status']]
+        body += f'<p class="notice">{label}。可部署路径：{h(detail.get("directory")) if last_export["status"]=="ready" else "本次无可部署版本"}。内容确认与导出状态分别记录。</p>'
+    body += f'<form method="post" action="/export"><input type="hidden" name="csrf" value="{token}"><button class="secondary">重新导出已确认期次</button></form>'
     for row in db.execute('SELECT * FROM issues ORDER BY id DESC'):
         count = db.execute('SELECT count(*) FROM issue_items WHERE issue_id=?', (row['id'],)).fetchone()[0]
         body += f'<section><h2>{h(row["id"])} 至 {h(row["end_date"])}</h2><p>{"已发布" if row["state"] == "published" else "草稿"} · {count} 篇 <a href="/preview?id={h(row["id"])}">预览本期</a></p>'
@@ -191,6 +258,10 @@ def sources_page(db):
         diagnostic=f'<details><summary>{h(labels.get(probe.get("classification"),probe.get("classification","未测试")))}</summary><p>HTTP {h(probe.get("status"))} · {h(", ".join(probe.get("signals",[])))}</p><p>{h(probe.get("solution"))}</p></details>'
         body += f'<tr><th>{h(source["title"])}</th><td>{sum(counts.values())}</td><td>{counts.get("awaiting_abstract",0)}</td><td>{counts.get("approved",0)+counts.get("awaiting_review",0)}</td><td>{counts.get("rejected",0)+counts.get("ai_excluded",0)+counts.get("type_excluded",0)}</td><td>{diagnostic}</td></tr>'
     body += '</tbody></table></div><h2>模型用量</h2>'
+    pending_requests = db.execute("SELECT id,mode,status,usage_json FROM ai_requests WHERE status NOT IN ('applied','acknowledged') ORDER BY created_at").fetchall()
+    if pending_requests:
+        body += '<h3>调用恢复待处理</h3><p>先恢复已保存响应；没有响应时核对供应商计费，再明确解除暂停。重新排队不会绕过未解决的调用。</p><ul>'
+        body += ''.join(f'<li>{h(r["id"])} · {h(r["mode"])} · {h(r["status"])} · {"用量已记录" if r["usage_json"] and r["usage_json"]!="null" else "计费待核"}</li>' for r in pending_requests) + '</ul>'
     usage_file = ROOT / 'outputs/ai-trial/usage.jsonl'
     totals = {'calls': 0, 'input': 0, 'output': 0, 'reasoning': 0, 'cached': 0, 'unknown': 0, 'tier_mismatch': 0}
     if usage_file.exists():
@@ -309,6 +380,8 @@ def make_handler(db_path, token, public):
                             raise ValueError('Confirm review before publishing')
                         publish_issue(db, form['id'][0])
                         export_site(db, public)
+                    elif self.path == '/export':
+                        export_site(db, public)
                     elif self.path == '/discard':
                         with db:
                             issue = db.execute('SELECT state FROM issues WHERE id=?', (form['id'][0],)).fetchone()
@@ -323,6 +396,8 @@ def make_handler(db_path, token, public):
                 self.end_headers()
             except (ValueError, KeyError) as exc:
                 self.send(400, shell('操作未完成', f'<h1>操作未完成</h1><p>{h(exc)}</p><a href="/">返回工作台</a>', admin=True))
+            except (OSError, RuntimeError):
+                self.send(503, shell('导出未完成', '<h1>操作未完成</h1><p>已确认内容保留，上一完整版本不变。请检查运行状态后重新导出。</p><a href="/issues">返回期次管理</a>', admin=True))
 
     return Handler
 

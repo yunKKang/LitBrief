@@ -30,6 +30,7 @@ def archive_inactive_sources(db):
     """Retain inactive-source records outside working queues, with reversible audit metadata."""
     active = registry()
     with db:
+        db.execute('BEGIN IMMEDIATE')
         rows = [r for r in db.execute("SELECT id,journal,cohort,state FROM papers WHERE cohort!='inactive_source'")
                 if r['journal'] not in active]
         if any(r['state'] == 'screening' for r in rows):
@@ -72,20 +73,37 @@ def connect(path=DATA / 'library.sqlite3'):
     CREATE TABLE IF NOT EXISTS runs (
       id INTEGER PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL);
     ''')
+    db.execute('BEGIN IMMEDIATE')
     columns = {r[1] for r in db.execute('PRAGMA table_info(papers)')}
     if 'cohort' not in columns:
         db.execute("ALTER TABLE papers ADD COLUMN cohort TEXT NOT NULL DEFAULT 'monitoring'")
-        db.commit()
     if 'enrichment_state' not in columns:
         db.execute("ALTER TABLE papers ADD COLUMN enrichment_state TEXT NOT NULL DEFAULT 'not_attempted'")
         db.execute("UPDATE papers SET enrichment_state='available' WHERE length(json_extract(data,'$.abstract'))>0")
-        db.commit()
+    if 'human_decision' not in columns:
+        db.execute("ALTER TABLE papers ADD COLUMN human_decision TEXT NOT NULL DEFAULT ''")
+        db.execute("ALTER TABLE papers ADD COLUMN material_changed INTEGER NOT NULL DEFAULT 0")
+        db.execute("""UPDATE papers SET human_decision=COALESCE((SELECT CASE action
+          WHEN 'requeue' THEN '' ELSE action END FROM reviews WHERE paper_id=papers.id
+          ORDER BY id DESC LIMIT 1),'')""")
+        # Restore the latest explicit exclusion if old ingestion had requeued it.
+        db.execute("""UPDATE papers SET state='rejected',material_changed=1,revision=revision+1
+          WHERE human_decision='reject' AND state!='rejected' AND id NOT IN
+          (SELECT paper_id FROM issue_items JOIN issues ON issues.id=issue_id WHERE issues.state='published')""")
+        db.execute("""UPDATE papers SET state='needs_review',material_changed=1,revision=revision+1
+          WHERE human_decision='approve' AND state!='approved' AND id NOT IN
+          (SELECT paper_id FROM issue_items JOIN issues ON issues.id=issue_id WHERE issues.state='published')""")
     db.execute('''CREATE TABLE IF NOT EXISTS enrichment_schedule (
       paper_id INTEGER PRIMARY KEY REFERENCES papers(id), input_digest TEXT NOT NULL,
       attempts INTEGER NOT NULL, next_attempt_at TEXT, last_status TEXT NOT NULL,
       updated_at TEXT NOT NULL)''')
     db.execute('''CREATE TABLE IF NOT EXISTS enrichment_holds (
       provider TEXT PRIMARY KEY, status TEXT NOT NULL, retry_at TEXT)''')
+    db.execute('''CREATE TABLE IF NOT EXISTS ai_requests (
+      id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, mode TEXT NOT NULL,
+      inputs TEXT NOT NULL, request_json TEXT NOT NULL, response_path TEXT NOT NULL,
+      status TEXT NOT NULL, usage_json TEXT, detail TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL)''')
     db.commit()
     return db
 
@@ -152,6 +170,8 @@ def identities(paper):
 
 
 def ingest(db, paper, origin):
+    if not db.in_transaction:
+        db.execute('BEGIN IMMEDIATE')
     paper = dict(paper)
     seed = paper.get('journal_seed_issn')
     source = registry().get(seed)
@@ -199,6 +219,13 @@ def ingest(db, paper, origin):
         if merged.get('abstract') == old.get('abstract') and old.get('abstract'):
             merged['abstract_source'] = old.get('abstract_source')
         material_changed = any(merged.get(k) != old.get(k) for k in ('title', 'abstract', 'abstract_source', 'type'))
+        if material_changed:
+            db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',
+                       (timestamp, 'material-change', 'needs_review', json.dumps({
+                           'paper_id': row['id'], 'previous_revision': row['revision'],
+                           'previous_data': old, 'previous_result': json.loads(row['result'] or '{}'),
+                           'human_decision': row['human_decision'],
+                           'changed_fields': [k for k in ('title','abstract','abstract_source','type') if old.get(k)!=merged.get(k)]}, ensure_ascii=False)))
         published = db.execute("SELECT 1 FROM issue_items JOIN issues ON issues.id=issue_id WHERE paper_id=? AND issues.state='published'", (row['id'],)).fetchone()
         if material_changed and published:
             db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',
@@ -206,8 +233,12 @@ def ingest(db, paper, origin):
         if material_changed and not published:
             db.execute("DELETE FROM issue_items WHERE paper_id=? AND issue_id IN (SELECT id FROM issues WHERE state='draft')", (row['id'],))
         state = ('pending' if merged.get('abstract') else 'awaiting_abstract') if material_changed and not published else row['state']
+        if material_changed and not published and row['human_decision']:
+            state = 'rejected' if row['human_decision'] == 'reject' else 'needs_review'
         db.execute('UPDATE papers SET data=?,state=?,result=?,updated_at=?,revision=revision+1 WHERE id=?',
                    (json.dumps(merged, ensure_ascii=False), state, None if material_changed and not published else row['result'], timestamp, row['id']))
+        if material_changed:
+            db.execute('UPDATE papers SET material_changed=1 WHERE id=?', (row['id'],))
         paper_id = row['id']
     else:
         state = 'pending' if paper.get('abstract') else 'awaiting_abstract'
@@ -271,9 +302,12 @@ def review(db, paper_id, action, summary, topics, note, revision):
     if action not in {'approve', 'reject', 'requeue'} or any(t not in TOPICS for t in topics):
         raise ValueError('Invalid review action or topic')
     with db:
+        db.execute('BEGIN IMMEDIATE')
         row = db.execute('SELECT * FROM papers WHERE id=?', (paper_id,)).fetchone()
         if not row or row['revision'] != revision:
             raise ValueError('This paper changed; reload before reviewing')
+        if action == 'requeue' and unresolved_ai(db, paper_id):
+            raise ValueError('AI request unresolved: recover saved response or acknowledge billing before requeue')
         if action in {'approve', 'requeue'} and row['journal'] not in registry():
             raise ValueError('Journal is inactive; its retained records cannot enter review or publication queues')
         if db.execute('SELECT 1 FROM issue_items WHERE paper_id=?', (paper_id,)).fetchone():
@@ -289,7 +323,14 @@ def review(db, paper_id, action, summary, topics, note, revision):
         state = {'approve': 'approved', 'reject': 'rejected', 'requeue': 'pending' if data.get('abstract') else 'awaiting_abstract'}[action]
         db.execute('UPDATE papers SET state=?,result=?,topics=?,revision=revision+1,updated_at=? WHERE id=?',
                    (state, json.dumps(result, ensure_ascii=False), json.dumps(topics, ensure_ascii=False), now(), paper_id))
+        db.execute('UPDATE papers SET human_decision=?,material_changed=0 WHERE id=?',
+                   ('' if action == 'requeue' else action, paper_id))
         db.execute('INSERT INTO reviews(paper_id,at,action,note) VALUES(?,?,?,?)', (paper_id, now(), action, note))
+
+
+def unresolved_ai(db, paper_id):
+    return [r[0] for r in db.execute("""SELECT ai_requests.id FROM ai_requests,json_each(inputs) AS item
+      WHERE json_extract(item.value,'$.id')=? AND status NOT IN ('applied','acknowledged')""", (paper_id,))]
 
 
 def period(day=None):
@@ -303,11 +344,12 @@ def period(day=None):
 def build_issue(db, day=None):
     start, end = period(day)
     with db:
+        db.execute('BEGIN IMMEDIATE')
         existing = db.execute('SELECT state FROM issues WHERE id=?', (start,)).fetchone()
         if existing and existing['state'] == 'published':
             return start  # Daily preparation is idempotent; late papers wait for the next period.
         db.execute("INSERT OR IGNORE INTO issues VALUES(?,?,'draft',?,NULL)", (start, end, now()))
-        for row in db.execute("SELECT * FROM papers WHERE state='approved' AND id NOT IN (SELECT paper_id FROM issue_items)").fetchall():
+        for row in db.execute("SELECT * FROM papers WHERE state='approved' AND material_changed=0 AND id NOT IN (SELECT paper_id FROM issue_items)").fetchall():
             data, result = json.loads(row['data']), json.loads(row['result'])
             source = registry().get(row['journal'])
             if not source:
@@ -327,6 +369,7 @@ def build_issue(db, day=None):
 
 def publish_issue(db, issue_id):
     with db:
+        db.execute('BEGIN IMMEDIATE')
         issue = db.execute('SELECT * FROM issues WHERE id=?', (issue_id,)).fetchone()
         if not issue or issue['state'] != 'draft':
             raise ValueError('Only a draft can be published')

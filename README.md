@@ -2,6 +2,8 @@
 
 面向能源、环境、产业转型、生产网络、供应链和住房研究的定期文献简报。以高质量来源和主题相关性筛选，提供中文短概况、原文链接和按期归档，不按固定篇数凑数。
 
+最终目标是独立运行的agent闭环：自动采集、筛选、证据核验、组期和发布，用户主要针对最终结果反馈；人工逐篇审核只用于当前测试校准。
+
 本项目当前是**本地试运行版本**。已实现采集、候选库、AI标题与摘要筛选、人工审核、四天组期及静态导出；真实文献仍待审核。生产部署、全来源稳定覆盖、月度期次和自动发布尚未完成。公开代码不包含本地文献库、原始摘要、API密钥或机构会话。
 
 ## 当前边界
@@ -48,13 +50,31 @@ python scripts/batch_screen.py --titles-only --group-size 12 --max-tokens 15000
 python scripts/workflow.py enrich --max-items 5
 python scripts/batch_screen.py --max-tokens 15000
 # 人工在后台复审、组期和确认发布后，导出已发布快照
-python scripts/workflow.py export
-python -m http.server 8767 --bind 127.0.0.1 --directory outputs/public
+$release = python scripts/workflow.py export | ConvertFrom-Json
+python -m http.server 8767 --bind 127.0.0.1 --directory $release.public_directory
 ```
 
 标题初筛不生成研究结论；短评仅依据正式摘要，并保存逐字支持片段。模型声明相关不等于研究质量已验证。使用预算停止后，未处理候选保留队列，不形成公开篇数限制。
 
-`workflow.py screen --ids ...` 与 `screen_paper.py` 是显式诊断入口；日常统一使用上面的标题→摘要批处理顺序。后台运行先结束再启动下一阶段，不并行消费队列。来源退出后运行 `python scripts/workflow.py sync-sources`，原始资料和AI结果保留，退出前队列记录在运行日志。
+`workflow.py screen --ids ...` 使用同一批处理引擎、每组1篇，并遵守标题先筛和请求恢复约束；`screen_paper.py` 是独立单篇诊断工具，不写候选库，日常不作为调度入口。日常统一使用上面的标题→摘要批处理顺序。后台运行先结束再启动下一阶段，不并行消费队列。来源退出后运行 `python scripts/workflow.py sync-sources`，原始资料和AI结果保留，退出前队列记录在运行日志。
+
+## 反馈保护与故障恢复
+
+人工排除在材料更新后继续有效；人工通过的未发布文章若材料变化，会从草稿移出并进入“材料变化待复审”。旧材料和判断留在私有运行记录，旧发表快照保持不变。只有明确的重新排队操作才撤销原人工决定；这是对用户主动反馈的保护，不代表最终自动闭环要求逐篇人工审批。
+
+批量AI发送前记录请求ID、输入指纹和状态；响应原子落盘后可离线恢复。原始响应、请求输入与用量记录均属于私有材料，不含API key，不导出。超时或无完整响应时不会自动再次付费，未处理调用阻止直接重排。当前恢复命令如下：
+
+```powershell
+python scripts/workflow.py status
+# 已有完整响应：重新验证、写入未被人工修改的文章，不联网、不收费
+python scripts/workflow.py recover-ai --request-id <调用编号>
+# 无法恢复且已经核对计费／材料后：记录处置依据，再通过后台明确重新排队
+python scripts/workflow.py acknowledge-ai --request-id <调用编号> --note '填写核对结果'
+```
+
+第二条处置命令自身不会发请求。新调用恢复记录覆盖本次升级后的批处理及workflow筛选入口；旧日志不能重建当时未保存的响应。匹配现有完整缓存时可离线复用，模型结果仍需重新校验。token阈值保持请求间停止语义，不承诺硬金额上限。
+
+内容确认与导出完成分开记录。导出失败可在期次页“重新导出已确认期次”，或运行 `workflow.py export`；不撤销内容快照，不替换上一完整站点。Windows预览绑定具体release，不需符号链接；生产Nginx仍仅指向核验后的release。后台显示导出状态与路径。进程被强制终止留下容器 `worker.lock` 时，先核实没有导出进程再恢复，不能删除正在使用的锁。
 
 ## 出版社接口与尚未解决的部分
 
@@ -93,9 +113,11 @@ python scripts/workflow.py resume-enrichment --ids <文章编号> --providers op
 
 月度方案建议先试Applied Energy和Building and Environment：仍发现题录、月底更严格筛选、沿用同库同归档。用户已同意月度机制；首批两刊沿用实施建议，周期配置与月度生成器尚未落地。14天滚动窗口不再使等待处理的文章自动变成历史；历史边界按固定首次监测起点划分。
 
+下一阶段按源码核查后的顺序推进：先保护人工决定并补齐导出／计费不确定状态恢复，再完善小批量排除抽检和概况证据核验；同步观察来源覆盖，随后落实两刊月度筛选。具体缺口、交付物和验收条件见 [下一阶段规划](docs/architecture.md)。第一阶段已实现人工反馈保护、不可变release、调用离线恢复与备份恢复验证；月度周期和自动发布尚未启用。稳定版的用户参与集中在最终结果反馈，初筛和日常抽检将由系统承担。
+
 ## 数据、Git与云端审查
 
-`outputs/library/library.sqlite3` 是唯一编辑状态；`outputs/` 内的抓取响应、摘要、模型证据、截图、备份都属于本地材料，全部忽略。`outputs/public` 仅输出已发布快照、CSS、字体与许可。未批准文章不会因导出而公开。
+`outputs/library/library.sqlite3` 是唯一编辑状态；`outputs/` 内的抓取响应、摘要、模型证据、截图、备份都属于本地材料，全部忽略。`outputs/public` 现在是版本容器；仅 `export` 返回的 `public_directory`（`releases/<版本>`）可用于预览／上传。容器内 `latest.json` 只在完整构建和本地链接校验成功后切换，失败版本与旧版本均保留，不自动删除。旧平铺导出不会被覆盖。未批准文章不会因导出而公开。
 
 ```powershell
 python -m unittest discover -s tests -v
