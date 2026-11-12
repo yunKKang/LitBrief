@@ -1,22 +1,35 @@
-# Proposed hostname; activate only after DNS and certificate provisioning.
+# Dedicated LitBrief virtual host; install after its certificate is provisioned.
 # Isolated virtual host: does not modify the existing lab site.
 server {
     listen 80;
-    server_name literature.sustainable-systems.world;
-    location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
-    location / { return 301 https://$host$request_uri; }
+    listen [::]:80;
+    server_name litbrief.sustainable-systems.world;
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/litbrief-acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+    location / { return 301 https://litbrief.sustainable-systems.world$request_uri; }
 }
 server {
     listen 443 ssl;
-    server_name literature.sustainable-systems.world;
-    ssl_certificate /etc/letsencrypt/live/literature.sustainable-systems.world/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/literature.sustainable-systems.world/privkey.pem;
-    root /var/www/literaturehot/current;
+    listen [::]:443 ssl;
+    server_name litbrief.sustainable-systems.world;
+    ssl_certificate /etc/letsencrypt/live/litbrief.sustainable-systems.world/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/litbrief.sustainable-systems.world/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    root /var/www/litbrief/current;
     index index.html;
+    autoindex off;
+    server_tokens off;
+    access_log /var/log/nginx/litbrief.access.log main;
+    error_log /var/log/nginx/litbrief.error.log warn;
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
     add_header X-Frame-Options DENY always;
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'" always;
-    location ~ /\. { deny all; }
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" always;
+    add_header Cache-Control "no-cache" always;
+    location ~ /\. { return 404; }
     location / { try_files $uri $uri/ =404; }
 }
