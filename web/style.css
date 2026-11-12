@@ -118,6 +118,13 @@ button:hover,.button:hover { color:var(--accent); border-color:var(--accent) }
 .admin .paper h3 { font-size:25px }
 .admin .paper-meta { justify-content:space-between }
 .admin .summary { font-size:18px }
+.workspace-tools { border-top:1px solid var(--line); margin-top:24px; padding-top:16px }
+.workspace-tools summary { cursor:pointer; font:16px/1.8 var(--sans); color:var(--muted); padding:8px 0 }
+.workspace-tools[open] summary { margin-bottom:12px }
+.disclosure { border-top:1px solid var(--line); padding:16px 0; margin:14px 0 }
+.disclosure>summary { cursor:pointer; font:18px/1.8 var(--sans); color:var(--body) }
+.disclosure[open]>summary { margin-bottom:18px }
+summary:focus-visible { outline:2px solid var(--accent); outline-offset:5px }
 .decision { font:14px/1.6 var(--sans); color:var(--active) }
 .review-action { display:flex; justify-content:space-between; align-items:center; gap:20px; font-size:14px; margin-top:14px }
 .review-grid { display:grid; grid-template-columns:1.05fr 1fr; gap:32px }

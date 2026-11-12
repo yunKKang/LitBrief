@@ -26,9 +26,9 @@ NAV_ICON = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="
 def shell(title,body,admin=False,prefix='',preview=False):
     reading='/reading' if admin or preview else prefix+'index.html'
     archive='/issues' if admin or preview else prefix+'archive.html'
-    about='/sources' if admin or preview else prefix+'about.html'
+    about='/about' if admin or preview else prefix+'about.html'
     nav=f'<a href="{reading}">本期文献</a><a href="{reading}#related">其他相关文献</a><a href="{archive}">往期归档</a><a href="{about}">选文标准</a>'
-    if admin or preview:nav+='<div class="nav-label">工作台</div><a href="/">审核文献</a><a href="/sources">来源与运行</a><a href="/issues">期次管理</a>'
+    if admin or preview:nav+='<details class="workspace-tools"><summary>管理与运行</summary><a href="/queue">候选记录</a><a href="/sources">运行状态</a><a href="/issues">期次管理</a><a href="/retention">数据保留</a></details>'
     if preview or title=='最新一期':
         nav=nav.replace('href="'+reading+'"','aria-current="page" href="'+reading+'"',1)
     elif not admin and title in {'往期文献','选文标准'}:
@@ -81,10 +81,10 @@ def card(item,prefix='',detail=False,featured=False,preview=False):
 
 def render_collection(items,start,end,preview=False,prefix='../',review_pending=None):
     important=[i for i in items if i['display']=='重点文献'];related=[i for i in items if i['display']!='重点文献']
-    label='<span class="draft-tag">待审试刊</span>' if preview else '<span class="draft-tag">'+('已发布' if items else '准备中')+'</span>'
+    label='<span class="draft-tag">内部预览</span>' if preview else '<span class="draft-tag">'+('已发布' if items else '准备中')+'</span>'
     body=f'<div class="edition-heading"><h1>本期文献</h1><p>{h(start.replace("-","."))} 至 {h(end.replace("-","."))} {label}</p></div>'+search_box()
-    if preview and review_pending is not None:
-        body+=f'<p class="review-note">本页为未发布试刊，{review_pending} 篇待人工复审。AI 辅助筛选，短评仅依据摘要。<a href="/?cohort=monitoring&amp;state=awaiting_review">进入复审</a></p>'
+    if preview and review_pending:
+        body+=f'<p class="review-note">{review_pending} 篇尚未确认。<a href="/queue?cohort=monitoring&amp;state=awaiting_review">查看候选</a></p>'
     if items:
         body+='<details class="reading-map"><summary>本期目录 <span>'+str(len(items))+' 篇</span></summary><ol>'+''.join(f'<li><a href="#paper-{p["id"]}">{h(p.get("title_zh") or p["title"])}</a></li>' for p in items)+'</ol></details>'
     body+='<section class="important-section"><div class="section-heading"><h2>重要文献</h2><span>仅依据摘要</span></div>'

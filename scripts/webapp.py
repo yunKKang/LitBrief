@@ -185,9 +185,10 @@ def review_index(db, query):
     counts={r[0]:r[1] for r in db.execute('SELECT state,count(*) FROM papers'+cwhere+' GROUP BY state',cparams)}
     cohorts={r[0]:r[1] for r in db.execute('SELECT cohort,count(*) FROM papers GROUP BY cohort')}
     body='<div class="workspace-heading"><div><h1>审核文献</h1><p>先看 AI 推荐，再抽检排除结果。原始候选不等于阅读清单。</p></div><a class="button" href="/reading">预览待审试刊</a></div>'
-    body+='<div class="queue-summary">'+''.join(f'<a href="/?cohort={cohort}&state={key}">{label}<strong>{counts.get(key,0)}</strong></a>' for key,label in [('awaiting_review','推荐待审'),('awaiting_abstract','待补材料'),('ai_excluded','排除结果可抽检')])+'</div>'
-    body+='<div class="cohort-nav">'+''.join(f'<a href="/?cohort={key}&state=all" {"aria-current=page" if cohort==key else ""}>{label} {sum(cohorts.values()) if key=="all" else cohorts.get(key,0)}</a>' for key,label in scopes.items())+'</div>'
-    body+='<div class="filters">'+''.join(f'<a href="/?cohort={cohort}&state={key}" {"aria-current=page" if state==key else ""}>{label} {counts.get(key,0)}</a>' for key,label in STATES.items())+'</div>'
+    body+='<div class="queue-summary">'+''.join(f'<a href="/queue?cohort={cohort}&state={key}">{label}<strong>{counts.get(key,0)}</strong></a>' for key,label in [('awaiting_review','推荐待审'),('awaiting_abstract','待补材料'),('ai_excluded','排除结果可抽检')])+'</div>'
+    body+='<details class="disclosure"><summary>筛选候选记录</summary><div class="cohort-nav">'+''.join(f'<a href="/queue?cohort={key}&state=all" {"aria-current=page" if cohort==key else ""}>{label} {sum(cohorts.values()) if key=="all" else cohorts.get(key,0)}</a>' for key,label in scopes.items())+'</div>'
+    body+='<div class="filters">'+''.join(f'<a href="/queue?cohort={cohort}&state={key}" {"aria-current=page" if state==key else ""}>{label} {counts.get(key,0)}</a>' for key,label in STATES.items())+'</div>'
+    body+='</details>'
     if cohort=='baseline':body+='<p class="notice">历史核验资料保留用于校准，不自动纳入本期推荐。可逐篇查看或抽样处理。</p>'
     if cohort=='date_unverified':body+='<p class="notice">尚未核实在线发表日期，未视为本期新增，也未因缺少日期而排除。</p>'
     if cohort=='inactive_source':body+='<p class="notice">这些期刊已停止跟踪。原始记录和既有筛选结果保留用于回溯，不再进入日常补摘要、AI 筛选或组期。</p>'
@@ -198,8 +199,8 @@ def review_index(db, query):
         body+=f'<article class="paper"><div class="paper-meta"><span class="journal">{h(data["journal_title"])}</span><span class="decision">{h(STATES[row["state"]])}</span></div><h3><a href="/paper?id={row["id"]}">{h(title)}</a></h3>{original}<p class="summary">{h(result.get("summary") or result.get("reason") or "等待处理，尚无相关性判断。")}</p><div class="review-action"><span>{h(result.get("basis", "原始候选"))} · #{row["id"]}</span><a href="/paper?id={row["id"]}">查看依据与审核 ›</a></div></article>'
     if not rows:body+='<div class="empty">这个队列目前没有文献。你可以切换其他处理状态。</div>'
     body+=f'<div class="pagination">共 {total} 篇 · 第 {page} 页 '
-    if page>1:body+=f'<a href="/?cohort={cohort}&state={state}&page={page-1}">上一页</a> '
-    if page*30<total:body+=f'<a href="/?cohort={cohort}&state={state}&page={page+1}">下一页</a>'
+    if page>1:body+=f'<a href="/queue?cohort={cohort}&state={state}&page={page-1}">上一页</a> '
+    if page*30<total:body+=f'<a href="/queue?cohort={cohort}&state={state}&page={page+1}">下一页</a>'
     return body+'</div>'
 
 
@@ -218,26 +219,30 @@ def paper_form(db, paper_id, token):
     body = f'<p class="eyebrow">{h(data["journal_title"])} · #{row["id"]} · {h(STATES[row["state"]])}</p><h1 class="article-title">{h(data["title"])}</h1>'
     if row['material_changed']:
         body += '<p class="notice">原始材料已变化，旧判断已留档。人工排除继续保留；已通过的未发布文章需要重新审核后才能组期。</p>'
+    if data.get('retention_compacted'):
+        body+='<p class="notice">详细材料已按保留规则精简，排除记录仍有效。如需重新评估，先重新排队，再补充摘要。</p>'
     checks=db.execute("SELECT snapshot,status,result FROM quality_jobs WHERE paper_id=? AND result IS NOT NULL ORDER BY rowid DESC LIMIT 3",(paper_id,)).fetchall()
     if checks:
-        body+='<section><h2>Agent 核验记录</h2><p class="muted">这是系统复核结果，不代表人工真值或研究质量认证。</p>'
+        body+='<details class="disclosure"><summary>系统核验记录</summary><p class="muted">系统判断不代表人工真值或研究质量认证。</p>'
         for check in checks:
             snapshot=json.loads(check['snapshot']); outcome=json.loads(check['result'])
             state='已过期' if snapshot['revision']!=row['revision'] else check['status']
             body+=f'<p>{h(outcome.get("mode"))} · {h(state)} · {h(outcome.get("verdict"))}：{h(outcome.get("reason"))}</p>'
-        body+='</section>'
+        body+='</details>'
     if url:
         body += f'<p><a href="{h(url)}" target="_blank" rel="noopener noreferrer">打开原文 ↗</a></p>'
-    body += f'<div class="review-grid"><section><h2>摘要依据</h2><p class="muted">{h(data.get("abstract_source") or "缺少可核实摘要")}</p><div class="abstract">{h(data.get("abstract") or "保留待补材料，不凭标题生成研究结论。")}</div><h2>AI 判断</h2><p>{h(result.get("decision"))} · {h(result.get("reason"))}</p><blockquote>{h(evidence)}</blockquote></section>'
+    if result.get('summary'):
+        body+=f'<p class="lead">{h(result["summary"])}</p>'
+    body += f'<details class="disclosure"><summary>查看摘要依据与人工编辑</summary><div class="review-grid"><section><h2>摘要依据</h2><p class="muted">{h(data.get("abstract_source") or "缺少可核实摘要")}</p><div class="abstract">{h(data.get("abstract") or "保留待补材料，不凭标题生成研究结论。")}</div><h2>AI 判断</h2><p>{h(result.get("decision"))} · {h(result.get("reason"))}</p><blockquote>{h(evidence)}</blockquote></section>'
     body += f'<section><h2>人工审核</h2><form method="post" action="/review"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{paper_id}"><input type="hidden" name="revision" value="{row["revision"]}"><label>中文概况<textarea name="summary" rows="8">{h(result.get("summary", ""))}</textarea></label><fieldset><legend>研究主题（可多选）</legend>'
     body += ''.join(f'<label class="check"><input type="checkbox" name="topics" value="{h(t)}" {"checked" if t in selected else ""}>{h(t)}</label>' for t in TOPICS)
-    body += '</fieldset><label>审核备注<textarea name="note" rows="2"></textarea></label><div class="actions"><button name="action" value="approve">通过审核</button><button class="secondary" name="action" value="reject">排除</button><button class="secondary" name="action" value="requeue">重新排队</button></div><p class="muted">通过审核后仍需组期与发布。重新排队不会立即调用模型。</p></form></section></div>'
+    body += '</fieldset><label>审核备注<textarea name="note" rows="2"></textarea></label><div class="actions"><button name="action" value="approve">通过审核</button><button class="secondary" name="action" value="reject">排除</button><button class="secondary" name="action" value="requeue">重新排队</button></div><p class="muted">通过审核后仍需组期与发布。重新排队不会立即调用模型。</p></form></section></div></details>'
     if not data.get('abstract'):
-        body += f'<section><h2>补充经核实的摘要</h2><p class="notice">补全状态：{h(material_labels.get(row["enrichment_state"],row["enrichment_state"]))}。这不代表出版社一定没有摘要。{"当前还需核实 DOI 或文章页面。" if not data.get("doi") else ""}</p><p>可在高校认证浏览器中核对原文后粘贴。只填正式 Abstract，不填 RSS 导读或搜索摘要。</p><form method="post" action="/abstract"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{paper_id}"><input type="hidden" name="revision" value="{row["revision"]}"><label>原文网页 URL<input type="url" name="source_url" required></label><label>正式摘要<textarea name="abstract" rows="8" required></textarea></label><label class="check"><input type="checkbox" name="verified" value="yes" required>已核对标题和 DOI，确认摘要属于本篇文章</label><button>保存摘要并进入待筛选队列</button></form></section>'
+        body += f'<details class="disclosure"><summary>补充经核实的摘要</summary><p class="notice">补全状态：{h(material_labels.get(row["enrichment_state"],row["enrichment_state"]))}。这不代表出版社一定没有摘要。{"当前还需核实 DOI 或文章页面。" if not data.get("doi") else ""}</p><p>可在高校认证浏览器中核对原文后粘贴。只填正式 Abstract，不填 RSS 导读或搜索摘要。</p><form method="post" action="/abstract"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{paper_id}"><input type="hidden" name="revision" value="{row["revision"]}"><label>原文网页 URL<input type="url" name="source_url" required></label><label>正式摘要<textarea name="abstract" rows="8" required></textarea></label><label class="check"><input type="checkbox" name="verified" value="yes" required>已核对标题和 DOI，确认摘要属于本篇文章</label><button>保存摘要并进入待筛选队列</button></form></details>'
     if schedule and row['state']=='awaiting_abstract':
         body+=f'<p class="notice">补充尝试 {schedule["attempts"]} 次 · '+(f'下次尝试：{h(schedule["next_attempt_at"])}' if schedule['next_attempt_at'] else '自动尝试已暂停，请人工核对来源或材料。')+'</p>'
     labels={'relevant':'值得读','not_relevant':'不相关','low_priority':'相关但本期不优先','duplicate':'内容重复／增量不足','summary_issue':'概况有问题'}
-    body+=f'<section><h2>最终结果反馈（可选）</h2><p>无需参与初筛。反馈留在内部，不改写往期；“不相关”会保护为人工排除，其余反馈不改变学科边界。</p><form method="post" action="/feedback"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{paper_id}"><input type="hidden" name="revision" value="{row["revision"]}"><label>反馈类型<select name="category">'+''.join(f'<option value="{key}">{value}</option>' for key,value in labels.items())+'</select></label><label>具体意见<textarea name="note" required rows="3"></textarea></label><button>保存反馈</button></form>'
+    body+=f'<section><h2>最终结果反馈（可选）</h2><p>只需留下阅读判断，反馈不会公开。</p><form method="post" action="/feedback"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{paper_id}"><input type="hidden" name="revision" value="{row["revision"]}"><label>反馈类型<select name="category">'+''.join(f'<option value="{key}">{value}</option>' for key,value in labels.items())+'</select></label><label>具体意见<textarea name="note" required rows="3"></textarea></label><button>保存反馈</button></form>'
     for feedback in db.execute('SELECT category,note FROM feedback WHERE paper_id=? ORDER BY id DESC LIMIT 5',(paper_id,)):
         body+=f'<p>{h(labels.get(feedback["category"],feedback["category"]))}：{h(feedback["note"])}</p>'
     body+='</section>'
@@ -261,29 +266,56 @@ def issues_page(db, token):
     return body
 
 
+def runtime_summary(db):
+    attention=db.execute("SELECT count(*) FROM papers WHERE cohort='monitoring' AND state IN ('ai_error','needs_review')").fetchone()[0]
+    unresolved=db.execute("SELECT count(*) FROM ai_requests WHERE status NOT IN ('applied','acknowledged')").fetchone()[0]
+    last_export=db.execute("SELECT status FROM runs WHERE kind='export' ORDER BY id DESC LIMIT 1").fetchone()
+    notices=[]
+    if attention:notices.append(f'<a href="/queue?state=all">{attention} 篇存在材料或核验异常</a>')
+    if unresolved:notices.append(f'{unresolved} 次调用等待恢复或核对计费')
+    if last_export and last_export[0]!='ready':notices.append('<a href="/issues">最近一次导出未完成，旧版本保持可用</a>')
+    return '<p class="notice">'+('；'.join(notices) if notices else '当前没有需要处理的执行异常。来源覆盖详情仍需单独核对。')+'</p>'
+
+
+def retention_page(db,token):
+    from retention import config
+    cfg=config()
+    body='<h1>数据保留</h1><p class="lead">精简过期材料，保留往期、你的反馈与去重记录。</p>'
+    body+=f'<p>排除详情 {cfg["excluded_days"]} 天 · 普通缓存 {cfg["cache_days"]} 天 · 备份保留近期恢复点及 {cfg["backup_daily"]} 个日备份、{cfg["backup_weekly"]} 个周备份 · 公开版本保留当前及前 {cfg["release_previous"]} 版。</p>'
+    body+=f'<form method="post" action="/retention-plan"><input type="hidden" name="csrf" value="{token}"><button>生成清理预览</button></form><p class="muted">此操作不会删除数据。实际执行需对照清单确认；自动清理尚未开启。</p>'
+    plans=sorted((DATA/'retention').glob('*.json'),key=lambda p:p.stat().st_mtime,reverse=True) if (DATA/'retention').exists() else []
+    if plans:
+        plan=json.loads(plans[0].read_text('utf-8'))
+        body+=f'<section><h2>最近预览</h2><p>{h(plan["created_at"])} · {len(plan["papers"])} 条可精简记录 · {len(plan["files"])} 个文件 · 文件约 {plan["file_bytes"]/1024**2:.1f} MiB</p><p class="muted">数据库逻辑内容估算减少 {plan["paper_logical_bytes"]/1024**2:.1f} MiB；不等于数据库文件立即缩小。</p><details class="disclosure"><summary>具体对象与保护说明</summary><p>计划编号：{h(plan["id"])}</p><ul>'
+        body+=''.join(f'<li>{h(p["kind"])} · {h(p["path"])}</li>' for p in plan['files'])
+        body+=''.join(f'<li>文献 #{p["id"]} · {h(p["title"])}</li>' for p in plan['papers'])
+        body+='</ul>'+''.join(f'<p>{h(note)}</p>' for note in plan['notes'])+'</details></section>'
+    return body
+
+
 def sources_page(db):
     diagnostic_file=ROOT/'outputs/access-diagnostics/latest.json'
     diagnostics=json.loads(diagnostic_file.read_text('utf-8')) if diagnostic_file.exists() else {}
     probes={p['seed_issn']:p for p in diagnostics.get('journals',[])}
     labels={'accessible':'首页可读','browser_challenge':'访问挑战','forbidden_unexplained':'403，原因未明','rate_limited':'限流','authentication_required':'需要认证','certificate_error':'证书问题','network_error':'网络问题'}
-    body = '<h1>来源与运行</h1><p class="notice">独立采集程序不依赖 Codex。Nature 目录已有自动化；本机认证浏览器仅用于辅助补材料，不代表服务器能无人值守。以下访问状态来自本机无认证 HTTP 检查，尚非生产服务器验证。</p><div class="table-wrap"><table><caption>日常监测队列与来源状态（历史样本和日期待核不计入本表）</caption><thead><tr><th>期刊</th><th>候选</th><th>待补摘要</th><th>待审／通过</th><th>排除</th><th>首页访问诊断</th></tr></thead><tbody>'
+    body = '<h1>运行状态</h1><p class="lead">查看需要关注的异常，其余信息按需展开。</p>'+runtime_summary(db)+'<details class="disclosure"><summary>各期刊采集与处理明细</summary><p class="muted">首页访问诊断不代表完整目录覆盖。</p><div class="table-wrap"><table><caption>日常监测队列与来源状态（历史样本和日期待核不计入本表）</caption><thead><tr><th>期刊</th><th>候选</th><th>待补摘要</th><th>待审／通过</th><th>排除</th><th>首页访问诊断</th></tr></thead><tbody>'
     for seed, source in registry().items():
         counts = {r[0]: r[1] for r in db.execute("SELECT state,count(*) FROM papers WHERE journal=? AND cohort='monitoring' GROUP BY state", (seed,))}
         probe=probes.get(seed,{})
         diagnostic=f'<details><summary>{h(labels.get(probe.get("classification"),probe.get("classification","未测试")))}</summary><p>HTTP {h(probe.get("status"))} · {h(", ".join(probe.get("signals",[])))}</p><p>{h(probe.get("solution"))}</p></details>'
         body += f'<tr><th>{h(source["title"])}</th><td>{sum(counts.values())}</td><td>{counts.get("awaiting_abstract",0)}</td><td>{counts.get("approved",0)+counts.get("awaiting_review",0)}</td><td>{counts.get("rejected",0)+counts.get("ai_excluded",0)+counts.get("type_excluded",0)}</td><td>{diagnostic}</td></tr>'
-    body += '</tbody></table></div>'
+    body += '</tbody></table></div></details>'
     last_cycle=db.execute("SELECT at,status,detail FROM runs WHERE kind='cycle' ORDER BY id DESC LIMIT 1").fetchone()
     if last_cycle:
         cycle=json.loads(last_cycle['detail']);gates=cycle.get('admission',[])
         eligible=sum(bool(g.get('eligible')) for g in gates)
         mode='离线影子检查' if cycle.get('mode')=='offline_shadow' else '实际处理'
         body+=f'<h2>最近一次自动流程</h2><p>{h(last_cycle["at"])} · {mode} · 最终候选 {len(gates)} 篇，其中 {eligible} 篇可准入。计入本轮的用量 {h(cycle.get("spent_tokens",0))} tokens。</p><p class="muted">影子检查不审批或发布；本地导出成功也不代表已经上传服务器。</p>'
-    body += '<h2>自动抽检与概况核验</h2><p>随机抽样、定向难例和用户反馈分开保留。Agent 分歧是复查线索，不是人工确认的误排率。</p>'
+    body += '<details class="disclosure"><summary>抽检与概况核验报告</summary><p>随机抽样、定向难例和用户反馈分开保留。Agent 分歧是复查线索，不是人工确认的误排率。</p>'
     for batch in db.execute('SELECT id,mode,created_at FROM quality_batches ORDER BY created_at DESC LIMIT 12'):
         label='排除抽检' if batch['mode']=='audit' else '概况核验'
         body+=f'<p><a href="/quality?id={h(batch["id"])}">{label} · {h(batch["created_at"])}</a></p>'
-    body+='<h2>模型用量</h2>'
+    body+='</details><details class="disclosure"><summary>模型用量与调用恢复</summary>'
     pending_requests = db.execute("SELECT id,mode,status,usage_json FROM ai_requests WHERE status NOT IN ('applied','acknowledged') ORDER BY created_at").fetchall()
     if pending_requests:
         body += '<h3>调用恢复待处理</h3><p>先恢复已保存响应；没有响应时核对供应商计费，再明确解除暂停。重新排队不会绕过未解决的调用。</p><ul>'
@@ -305,10 +337,10 @@ def sources_page(db):
             totals['reasoning'] += (usage.get('output_tokens_details') or {}).get('reasoning_tokens', 0)
             totals['cached'] += (usage.get('input_tokens_details') or {}).get('cached_tokens', 0)
             totals['tier_mismatch'] += event.get('requested_tier') == 'fast' and event.get('returned_tier') not in {'fast','priority'}
-    body += f'<p>调用 {totals["calls"]} 次 · 输入 {totals["input"]:,} + 输出 {totals["output"]:,} = {totals["input"]+totals["output"]:,} tokens</p><p class="muted">其中缓存 {totals["cached"]:,}、推理 {totals["reasoning"]:,}（均已包含在上方）；{totals["unknown"]} 次未返回完整用量，fast 档位未获确认 {totals["tier_mismatch"]} 次。校验失败但返回用量的调用也计入；金额以供应商账单为准。</p><h2>最近运行</h2>'
+    body += f'<p>调用 {totals["calls"]} 次 · 输入 {totals["input"]:,} + 输出 {totals["output"]:,} = {totals["input"]+totals["output"]:,} tokens</p><p class="muted">其中缓存 {totals["cached"]:,}、推理 {totals["reasoning"]:,}（均已包含在上方）；{totals["unknown"]} 次未返回完整用量，fast 档位未获确认 {totals["tier_mismatch"]} 次。校验失败但返回用量的调用也计入；金额以供应商账单为准。</p></details><details class="disclosure"><summary>技术运行日志</summary>'
     for row in db.execute('SELECT * FROM runs ORDER BY id DESC LIMIT 10'):
-        body += f'<p>{h(row["at"])} · {h(row["kind"])} · {h(row["status"])}</p><pre>{h(row["detail"])}</pre>'
-    return body
+        body += f'<details><summary>{h(row["at"])} · {h(row["kind"])} · {h(row["status"])}</summary><pre>{h(row["detail"])}</pre></details>'
+    return body+'</details>'
 
 
 def make_handler(db_path, token, public):
@@ -349,8 +381,10 @@ def make_handler(db_path, token, public):
                     return self.send(200,asset.read_bytes(),kind,cache)
                 with closing(connect(db_path)) as db:
                     if path.path == '/reading':
-                        return self.send(200, shell('待审试刊', reading_preview(db), preview=True))
-                    elif path.path == '/':
+                        return self.send(200, shell('阅读结果', reading_preview(db), preview=True))
+                    elif path.path == '/' and not query:
+                        return self.send(200,shell('阅读结果',reading_preview(db),preview=True))
+                    elif path.path in {'/','/queue'}:
                         body = review_index(db, query)
                     elif path.path == '/paper':
                         body = paper_form(db, int(query['id'][0]), token)
@@ -358,6 +392,10 @@ def make_handler(db_path, token, public):
                         body = issues_page(db, token)
                     elif path.path == '/sources':
                         body = sources_page(db)
+                    elif path.path == '/about':
+                        body='<h1>选文标准</h1><p class="lead">高质量期刊，围绕课题组的具体研究问题精选。</p><ul>'+''.join(f'<li>{h(t)}</li>' for t in TOPICS)+'</ul><p>方法相近的边缘研究可作为拓展线索，不自动扩大核心主题。短评仅依据摘要，全文阅读价值由读者判断。</p><details class="disclosure"><summary>关注期刊</summary><ul>'+''.join(f'<li>{h(s["title"])}</li>' for s in registry().values())+'</ul></details>'
+                    elif path.path == '/retention':
+                        body=retention_page(db,token)
                     elif path.path == '/quality':
                         from quality import report
                         report_data=report(db,query['id'][0])
@@ -392,6 +430,9 @@ def make_handler(db_path, token, public):
                 with closing(connect(db_path)) as db:
                     if self.path == '/review':
                         review(db, int(form['id'][0]), form['action'][0], form.get('summary', [''])[0], form.get('topics', []), form.get('note', [''])[0], int(form['revision'][0]))
+                    elif self.path == '/retention-plan':
+                        from retention import build_plan,save_plan
+                        save_plan(build_plan(db))
                     elif self.path == '/feedback':
                         from quality import feedback
                         feedback(db,int(form['id'][0]),form['category'][0],form.get('note',[''])[0],int(form['revision'][0]))
@@ -428,7 +469,7 @@ def make_handler(db_path, token, public):
                     else:
                         return self.send(404, 'Not found')
                 self.send_response(303)
-                location = '/paper?id='+str(int(form['id'][0])) if self.path == '/feedback' else '/' if self.path in {'/review','/abstract'} else '/issues'
+                location = '/retention' if self.path=='/retention-plan' else '/paper?id='+str(int(form['id'][0])) if self.path == '/feedback' else '/queue' if self.path in {'/review','/abstract'} else '/issues'
                 self.send_header('Location', location)
                 self.end_headers()
             except (ValueError, KeyError) as exc:

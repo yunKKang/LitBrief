@@ -1,0 +1,8 @@
+{
+  "excluded_days": 90,
+  "cache_days": 30,
+  "backup_min_days": 7,
+  "backup_daily": 7,
+  "backup_weekly": 4,
+  "release_previous": 2
+}

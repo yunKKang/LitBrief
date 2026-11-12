@@ -93,6 +93,10 @@ def main():
     exp = sub.add_parser('export')
     exp.add_argument('--output', type=Path, default=ROOT / 'outputs/public')
     sub.add_parser('backup')
+    sub.add_parser('cleanup-plan',help='Create an exact retention preview; no deletion')
+    clean=sub.add_parser('cleanup-apply',help='Apply only the unchanged explicitly confirmed preview')
+    clean.add_argument('--plan',required=True,type=Path)
+    clean.add_argument('--confirm',required=True,help='Full SHA-256 plan ID reviewed by the operator')
     loop = sub.add_parser('run-cycle', help='Offline shadow by default; explicit live processing and separate local publication')
     loop.add_argument('--live', action='store_true', help='Collect and run paid AI under a shared token threshold')
     loop.add_argument('--publish', action='store_true', help='Requires publication_mode=automatic; confirms closed issues and exports locally')
@@ -137,6 +141,14 @@ def main():
         elif args.command == 'recover-ai':
             from batch_screen import recover
             result = recover(db, args.request_id)
+        elif args.command == 'cleanup-plan':
+            from retention import build_plan,save_plan
+            plan=build_plan(db);path=save_plan(plan)
+            result={'plan_file':str(path),'plan_id':plan['id'],'files':len(plan['files']),
+                    'file_bytes':plan['file_bytes'],'papers':len(plan['papers']),'paper_logical_bytes':plan['paper_logical_bytes'],'notes':plan['notes']}
+        elif args.command == 'cleanup-apply':
+            from retention import apply_plan
+            result=apply_plan(db,json.loads(args.plan.read_text('utf-8')),args.confirm)
         elif args.command == 'run-cycle':
             from automation import cycle
             result=cycle(db,live=args.live,publish=args.publish,max_tokens=args.max_tokens,

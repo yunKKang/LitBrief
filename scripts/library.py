@@ -213,6 +213,9 @@ def ingest(db, paper, origin):
     timestamp = now()
     if row:
         old = json.loads(row['data'])
+        if old.get('retention_compacted'):
+            from retention import slim_data
+            paper=slim_data(paper)  # Rediscovery must not restore discarded payloads or paid queues.
         if old.get('doi') and paper.get('doi') and old['doi'] != paper['doi']:
             raise ValueError('Conflicting DOI; refusing to merge')
         merged = dict(old)
@@ -250,10 +253,12 @@ def ingest(db, paper, origin):
         if material_changed and not published:
             db.execute("DELETE FROM issue_items WHERE paper_id=? AND issue_id IN (SELECT id FROM issues WHERE state='draft')", (row['id'],))
         state = ('pending' if merged.get('abstract') else 'awaiting_abstract') if material_changed and not published else row['state']
+        if old.get('retention_compacted'):
+            state=row['state']
         if material_changed and not published and row['human_decision']:
             state = 'rejected' if row['human_decision'] == 'reject' else 'needs_review'
         db.execute('UPDATE papers SET data=?,state=?,result=?,updated_at=?,revision=revision+1 WHERE id=?',
-                   (json.dumps(merged, ensure_ascii=False), state, None if material_changed and not published else row['result'], timestamp, row['id']))
+                   (json.dumps(merged, ensure_ascii=False), state, None if material_changed and not published and not old.get('retention_compacted') else row['result'], timestamp, row['id']))
         if material_changed:
             db.execute('UPDATE papers SET material_changed=1 WHERE id=?', (row['id'],))
         paper_id = row['id']
@@ -331,6 +336,9 @@ def review(db, paper_id, action, summary, topics, note, revision):
             raise ValueError('Paper belongs to an issue; remove draft before editing. Published snapshots are immutable.')
         data = json.loads(row['data'])
         result = json.loads(row['result'] or '{}')
+        if action=='requeue' and data.pop('retention_compacted',False):
+            result={}
+            db.execute('UPDATE papers SET data=? WHERE id=?',(json.dumps(data,ensure_ascii=False),paper_id))
         if action == 'approve':
             if not data.get('abstract') or not data.get('abstract_source') or not summary.strip() or not topics:
                 raise ValueError('Approval requires a sourced abstract, summary and at least one topic')

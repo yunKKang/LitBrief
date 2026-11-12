@@ -177,6 +177,15 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             export_site(self.db, private)
 
+    def test_public_release_never_contains_private_workbench_navigation(self):
+        pid=self.add();self.approve(pid)
+        issue=build_issue(self.db,date(2026,11,11));publish_issue(self.db,issue)
+        release=export_site(self.db,self.root/'public')
+        for page in release.rglob('*.html'):
+            text=page.read_text('utf-8')
+            for private in ('管理与运行','href="/retention"','href="/queue"','action="/feedback"','技术运行日志'):
+                self.assertNotIn(private,text)
+
     def test_source_retirement_waits_for_in_flight_request(self):
         from unittest.mock import patch
         pid = self.add()
