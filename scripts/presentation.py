@@ -35,7 +35,7 @@ def shell(title,body,admin=False,prefix='',preview=False):
         current=archive if title=='往期文献' else about
         nav=nav.replace('href="'+current+'"','aria-current="page" href="'+current+'"',1)
     themes='<div class="theme-switch" role="group" aria-label="外观">'+''.join(f'<button type="button" data-theme-choice="{v}" aria-pressed="false">{label}</button>' for v,label in [('light','浅色'),('system','系统'),('dark','深色')])+'</div>'
-    return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="能源、环境与社会系统的精选文献，四天一期。"><title>{h(title)} · {SITE_NAME} · {SITE_SUBTITLE}</title>{THEME_SCRIPT}{NAV_SCRIPT}<link rel="stylesheet" href="{'/fonts/fonts.css' if admin or preview else prefix+'fonts/fonts.css'}"><link rel="stylesheet" href="{'/style.css' if admin or preview else prefix+'style.css'}"></head><body class="{'admin' if admin else 'publication'}"><a class="skip" href="#main">跳到正文</a><button id="nav-toggle" class="nav-toggle" type="button" aria-controls="site-navigation" aria-expanded="true" aria-label="收起导航" data-tooltip="收起导航">{NAV_ICON}</button><div class="compact-masthead"><a href="{reading}" class="brand">{SITE_NAME}</a></div><aside class="sidebar" id="site-navigation"><a class="brand" href="{reading}">{SITE_NAME}</a><p class="brand-subtitle">{SITE_SUBTITLE}</p><nav aria-label="主导航">{nav}</nav>{themes}</aside><main id="main">{body}<footer><span>{SITE_NAME} · {SITE_SUBTITLE}</span><span>{'内部预览（未发布）' if preview else '短评仅依据摘要，引用请核对原文'}</span></footer></main></body></html>'''
+    return f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="能源、环境与社会系统的精选文献，每周一期。"><title>{h(title)} · {SITE_NAME} · {SITE_SUBTITLE}</title>{THEME_SCRIPT}{NAV_SCRIPT}<link rel="stylesheet" href="{'/fonts/fonts.css' if admin or preview else prefix+'fonts/fonts.css'}"><link rel="stylesheet" href="{'/style.css' if admin or preview else prefix+'style.css'}"></head><body class="{'admin' if admin else 'publication'}"><a class="skip" href="#main">跳到正文</a><button id="nav-toggle" class="nav-toggle" type="button" aria-controls="site-navigation" aria-expanded="true" aria-label="收起导航" data-tooltip="收起导航">{NAV_ICON}</button><div class="compact-masthead"><a href="{reading}" class="brand">{SITE_NAME}</a></div><aside class="sidebar" id="site-navigation"><a class="brand" href="{reading}">{SITE_NAME}</a><p class="brand-subtitle">{SITE_SUBTITLE}</p><nav aria-label="主导航">{nav}</nav>{themes}</aside><main id="main">{body}<footer><span>{SITE_NAME} · {SITE_SUBTITLE}</span><span>{'内部预览（未发布）' if preview else '短评仅依据摘要，引用请核对原文'}</span></footer></main></body></html>'''
 
 def search_box():
     buttons='<button type="button" data-topic="" aria-pressed="true">全部</button>'+''.join(f'<button type="button" data-topic="{h(t)}" aria-pressed="false">{label}</button>' for t,label in zip(TOPICS,SHORT_TOPICS))
@@ -62,6 +62,36 @@ document.addEventListener('DOMContentLoaded',()=>{{
     document.querySelectorAll('[data-topic]').forEach(b=>b.addEventListener('click',()=>{{topic=b.dataset.topic;document.querySelectorAll('[data-topic]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));filter()}}));
     document.querySelectorAll('.reading-map a[href^="#paper-"]').forEach(a=>a.addEventListener('click',()=>{{const target=document.getElementById(a.hash.slice(1));if(target&&target.hidden)reset()}}));
 }});</script>'''
+
+
+def archive_index(issues):
+    """An issue directory; article content lives on each issue's own page."""
+    body = '<h1>往期归档</h1>'
+    if not issues:
+        return body + '<p class="empty">第一期正在准备中。</p>'
+    months = sorted({i['id'][:7] for i in issues}, reverse=True)
+    options = '<option value="">全部月份</option>' + ''.join(
+        f'<option value="{h(month)}">{h(month)}</option>' for month in months)
+    body += f'''<div class="archive-tools"><label>按月份<select id="archive-month">{options}</select></label><label>查找期次<input id="archive-search" type="search" placeholder="输入日期，如 2026-11"></label></div><p id="archive-count" class="muted" aria-live="polite">共 {len(issues)} 期</p><div class="issue-directory">'''
+    for issue in issues:
+        label = f'{issue["id"]} 至 {issue["end_date"]}'
+        body += f'''<a class="issue-entry" data-month="{h(issue['id'][:7])}" href="issues/{h(issue['id'])}.html"><span class="issue-range">{h(label)}</span><span class="issue-meta">{issue['count']} 篇 <span aria-hidden="true">↗</span></span></a>'''
+    body += '''</div><p id="archive-empty" class="empty" hidden>没有符合条件的期次。</p><script>
+document.addEventListener('DOMContentLoaded',()=>{
+    const month=document.querySelector('#archive-month'),search=document.querySelector('#archive-search');
+    function filter(){
+        let count=0;const query=search.value.trim().toLowerCase();
+        document.querySelectorAll('.issue-entry').forEach(entry=>{
+            entry.hidden=Boolean((month.value&&entry.dataset.month!==month.value)||!entry.textContent.toLowerCase().includes(query));
+            if(!entry.hidden)count++;
+        });
+        document.querySelector('#archive-count').textContent=`共 ${count} 期`;
+        document.querySelector('#archive-empty').hidden=count>0;
+    }
+    month.addEventListener('change',filter);search.addEventListener('input',filter);
+});</script>'''
+    return body
+
 
 def card(item,prefix='',detail=False,featured=False,preview=False):
     href=f'/paper?id={item["id"]}' if preview else f'{prefix}papers/{item["id"]}.html'

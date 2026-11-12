@@ -12,11 +12,11 @@ import shutil
 from uuid import uuid4
 from urllib.parse import parse_qs, urlsplit
 
-from library import DATA, ROOT, TOPICS, build_issue, connect, publish_issue, registry, review, safe_url, ingest, today, now, worker_lock
+from library import DATA, ROOT, TOPICS, build_issue, connect, publish_issue, period, registry, review, safe_url, ingest, today, now, worker_lock
 from datetime import timedelta, date, datetime, timezone
 
 
-from presentation import h, shell, search_box, card, render_collection
+from presentation import h, shell, search_box, card, render_collection, archive_index
 
 
 def issue_body(db, issue_id, preview=False):
@@ -109,26 +109,25 @@ def _render_site(db, target):
             source=(font_dir/name).resolve()
             if source.parent!=font_dir.resolve():raise ValueError('Invalid font asset path')
             shutil.copyfile(source,target/'fonts'/name)
-    issues = db.execute("SELECT * FROM issues WHERE state='published' ORDER BY id DESC").fetchall()
+    # Historical backfills must not displace the newest coverage window. A later
+    # weekly issue may share an end date with the preserved initial trial issue.
+    issues = db.execute("SELECT * FROM issues WHERE state='published' ORDER BY end_date DESC,published_at DESC,id DESC").fetchall()
     for issue in issues:
         atomic_write(target / 'issues' / (issue['id'] + '.html'), shell(issue['id'], issue_body(db, issue['id']), prefix='../'))
     for row in db.execute("SELECT snapshot,issue_id FROM issue_items JOIN issues ON issues.id=issue_id WHERE issues.state='published'"):
         item = json.loads(row['snapshot'])
         body = f'<p><a href="../issues/{h(row["issue_id"])}.html">返回本期</a></p>' + card(item, '../', detail=True)
         atomic_write(target / 'papers' / (str(item['id']) + '.html'), shell(item['title'], body, prefix='../'))
-    archive = '<h1>往期文献</h1><p class="lead">每四天一期，积累可回看的研究线索。</p>'
-    archive += ''.join(f'<p class="issue-link"><a href="issues/{h(i["id"])}.html">{h(i["id"])} 至 {h(i["end_date"])}</a></p>' for i in issues) or '<p class="empty">第一期正在准备中。</p>'
-    archive += search_box()
-    for row in db.execute("SELECT snapshot FROM issue_items JOIN issues ON issues.id=issue_id WHERE issues.state='published' ORDER BY issue_id DESC,paper_id"):
-        archive += card(json.loads(row[0]))
+    counts = dict(db.execute('SELECT issue_id,count(*) FROM issue_items GROUP BY issue_id'))
+    archive = archive_index([{**dict(issue), 'count': counts.get(issue['id'], 0)} for issue in issues])
     atomic_write(target / 'archive.html', shell('往期文献', archive))
     if issues:
         # Render the same content, adjusting links to the root rather than redirecting.
         latest = issue_body(db, issues[0]['id']).replace('href="../papers/', 'href="papers/')
     else:
-        latest = render_collection([], (today()-timedelta(days=3)).isoformat(), today().isoformat(), prefix='')
+        latest = render_collection([], *period(), prefix='')
     atomic_write(target / 'index.html', shell('最新一期', latest))
-    about = '<h1>选文标准</h1><p class="lead">以期刊影响力和研究价值为起点，以主题相关性决定收录。</p><h2>关注的问题</h2><ul>' + ''.join(f'<li>{h(t)}</li>' for t in TOPICS) + '</ul><p>水风险作为相关研究的情境，不设独立核心方向。单篇需有明确的产业、供应网络、政策或住房系统问题及实质贡献。工程与环境工程技术、单厂运行控制、材料性能、土壤过程和工艺优化不纳入；附带节能减排或生命周期评价不能替代系统研究。新闻和普通社论不纳入。</p><h2>如何阅读</h2><p>每四天一期，不设固定篇数。重要文献附中文短评，其他相关文献以列表展示。AI 辅助筛选与概括，前几期人工审核。短评仅依据摘要，无法替代全文阅读或质量审查。</p><h2>关注期刊</h2><ul class="journal-list">' + ''.join(f'<li>{h(s["title"])}</li>' for s in registry().values()) + '</ul>'
+    about = '<h1>选文标准</h1><h2>研究主题</h2><ul>' + ''.join(f'<li>{h(t)}</li>' for t in TOPICS) + '</ul><h2>关注期刊</h2><ul class="journal-list">' + ''.join(f'<li>{h(s["title"])}</li>' for s in registry().values()) + '</ul>'
     atomic_write(target / 'about.html', shell('选文标准', about))
 
 
@@ -159,12 +158,12 @@ def preview_window(db):
     for row in db.execute("SELECT detail FROM runs WHERE kind='collect' ORDER BY id DESC"):
         try:
             end=date.fromisoformat(json.loads(row['detail'])['end'])
-            return (end-timedelta(days=3)).isoformat(),end.isoformat()
+            return period(end)
         except (ValueError,KeyError,TypeError):
             continue
     row=db.execute('SELECT max(first_seen) FROM papers').fetchone()
     end=datetime.fromisoformat(row[0]).astimezone(timezone(timedelta(hours=8))).date() if row[0] else today()
-    return (end-timedelta(days=3)).isoformat(),end.isoformat()
+    return period(end)
 
 
 def review_index(db, query):
@@ -250,7 +249,7 @@ def paper_form(db, paper_id, token):
 
 
 def issues_page(db, token):
-    body = f'<h1>期次管理</h1><p class="lead">每四个自然日一期，已发布内容保留稳定链接。</p><form method="post" action="/prepare"><input type="hidden" name="csrf" value="{token}"><button>将已通过文献加入本期草稿</button></form>'
+    body = f'<h1>期次管理</h1><p class="lead">每周一期（周日至周六），已发布内容保留稳定链接。</p><form method="post" action="/prepare"><input type="hidden" name="csrf" value="{token}"><button>将已通过文献加入本期草稿</button></form>'
     last_export = db.execute("SELECT status,detail FROM runs WHERE kind='export' ORDER BY id DESC LIMIT 1").fetchone()
     if last_export:
         detail = json.loads(last_export['detail'])

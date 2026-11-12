@@ -47,6 +47,15 @@ class RecoveryTests(unittest.TestCase):
     def request(self):
         return self.db.execute('SELECT * FROM ai_requests ORDER BY created_at DESC LIMIT 1').fetchone()
 
+    def test_explicit_empty_sample_never_expands_to_entire_queue(self):
+        transport = Mock(side_effect=AssertionError('Empty sample must not call AI'))
+        before = dict(self.db.execute('SELECT * FROM papers').fetchone())
+        result = self.run_batch(transport=transport, ids=[])
+        self.assertEqual(result['processed'], 0)
+        transport.assert_not_called()
+        self.assertEqual(dict(self.db.execute('SELECT * FROM papers').fetchone()), before)
+        self.assertIsNone(self.request())
+
     def test_response_saved_before_interruption_recovers_without_network(self):
         transport = Mock(side_effect=answer)
         with patch.object(batch, 'apply_saved', side_effect=RuntimeError('crash before DB apply')):

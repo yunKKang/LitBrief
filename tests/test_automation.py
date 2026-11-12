@@ -127,7 +127,7 @@ class AutomationTests(unittest.TestCase):
         same=automation.cycle(self.db,publish=True,day=self.day,output=self.root/'public',runtime={'publication_mode':'automatic'})
         self.assertEqual(same['publication']['state'],'already_exported')
         self.assertIsNone(self.db.execute('SELECT 1 FROM issue_items WHERE paper_id=?',(late,)).fetchone())
-        later=automation.cycle(self.db,publish=True,day=date(2026,11,19),output=self.root/'public',runtime={'publication_mode':'automatic'})
+        later=automation.cycle(self.db,publish=True,day=date(2026,11,22),output=self.root/'public',runtime={'publication_mode':'automatic'})
         self.assertEqual(later['publication']['issue_id'],'2026-11-15')
         self.assertEqual(self.db.execute('SELECT count(*) FROM issue_items').fetchone()[0],2)
 
@@ -137,7 +137,7 @@ class AutomationTests(unittest.TestCase):
             result=automation.cycle(self.db,publish=True,day=self.day,output=self.root/'public',runtime={'publication_mode':'automatic'})
         self.assertIsNone(result['publication'])
         self.assertEqual(self.db.execute('SELECT state FROM issues').fetchone()[0],'published')
-        next_run=automation.cycle(self.db,publish=True,day=date(2026,11,19),output=self.root/'public',runtime={'publication_mode':'automatic'})
+        next_run=automation.cycle(self.db,publish=True,day=date(2026,11,22),output=self.root/'public',runtime={'publication_mode':'automatic'})
         self.assertEqual(next_run['publication']['state'],'exported')
 
     def test_unsupported_current_verification_never_admits(self):
@@ -170,7 +170,7 @@ class AutomationTests(unittest.TestCase):
         # A current human approval can coexist with a scheduling preference.
         row=self.row(pid);review(self.db,pid,'approve','Summary',[TOPICS[4]],'Approved substance',row['revision'])
         self.assertEqual(automation.admission(self.db,self.row(pid),self.day,'2026-11-14')['reason'],'deferred_by_feedback')
-        self.assertTrue(automation.admission(self.db,self.row(pid),date(2026,11,19),'2026-11-18')['eligible'])
+        self.assertTrue(automation.admission(self.db,self.row(pid),date(2026,11,22),'2026-11-21')['eligible'])
 
     def test_live_cycle_shares_one_budget_and_isolates_collection_failure(self):
         self.add()

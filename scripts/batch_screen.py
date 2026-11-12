@@ -182,7 +182,7 @@ def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, ma
         active = registry()
         rows = [r for r in rows if r['journal'] in active and
                 bool(json.loads(r['result'] or '{}').get('title_screened')) != titles_only]
-        if ids:
+        if ids is not None:
             rows = [r for r in rows if r['id'] in ids]
         quality_mode = None
         if quality_batch:

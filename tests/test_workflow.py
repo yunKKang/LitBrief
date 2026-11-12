@@ -141,17 +141,38 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotEqual(old, latest)
         self.assertTrue((latest / 'index.html').exists())
 
-    def test_four_day_period_crosses_month_and_year(self):
-        self.assertEqual(period(date(2026,11,14)), ('2026-11-11','2026-11-14'))
-        self.assertEqual(period(date(2026,11,15)), ('2026-11-15','2026-11-18'))
+    def test_weekly_period_crosses_month_and_year(self):
+        self.assertEqual(period(date(2026,11,14)), ('2026-11-08','2026-11-14'))
+        self.assertEqual(period(date(2026,11,15)), ('2026-11-15','2026-11-21'))
         start,end = period(date(2027,1,1))
-        self.assertEqual((date.fromisoformat(end)-date.fromisoformat(start)).days,3)
+        self.assertEqual((date.fromisoformat(end)-date.fromisoformat(start)).days,6)
+        self.assertEqual(date.fromisoformat(start).weekday(),6)
+        self.assertEqual(date.fromisoformat(end).weekday(),5)
+        self.assertEqual(period(date(2026,10,1)), ('2026-09-27','2026-10-03'))
+
+    def test_weekly_export_supersedes_trial_without_overwriting_snapshot(self):
+        pid = self.add(); self.approve(pid)
+        weekly = build_issue(self.db, date(2026,11,12))
+        snapshot = self.db.execute('SELECT snapshot FROM issue_items').fetchone()[0]
+        with self.db:
+            self.db.execute('DELETE FROM issue_items')
+            self.db.execute('DELETE FROM issues')
+            self.db.execute("INSERT INTO issues VALUES('2026-11-11','2026-11-14','published','2026-11-12','2026-11-12')")
+            self.db.execute("INSERT INTO issue_items VALUES('2026-11-11',?,?)", (pid, snapshot))
+        new_id = self.add({**PAPER, 'doi':'10.1000/weekly', 'urls':['https://example.org/weekly'], 'title':'Later weekly recommendation'})
+        self.approve(new_id)
+        self.assertEqual(build_issue(self.db, date(2026,11,12)), weekly)
+        publish_issue(self.db, weekly)
+        output = export_site(self.db, self.root/'public')
+        self.assertIn('Later weekly recommendation', (output/'index.html').read_text('utf-8'))
+        self.assertEqual(self.db.execute("SELECT snapshot FROM issue_items WHERE issue_id='2026-11-11'").fetchone()[0], snapshot)
+        self.assertTrue((output/'issues/2026-11-11.html').is_file())
 
     def test_preview_window_tracks_collection_not_wall_clock(self):
         with self.db:
             self.db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',
                             ('2026-11-11T13:00:00+00:00','collect','partial',json.dumps({'end':'2026-11-11'})))
-        self.assertEqual(preview_window(self.db),('2026-11-08','2026-11-11'))
+        self.assertEqual(preview_window(self.db),('2026-11-08','2026-11-14'))
 
     def test_publisher_pending_import_without_crossref(self):
         folder = self.root / 'audit'
