@@ -76,6 +76,25 @@ python scripts/workflow.py acknowledge-ai --request-id <调用编号> --note '�
 
 内容确认与导出完成分开记录。导出失败可在期次页“重新导出已确认期次”，或运行 `workflow.py export`；不撤销内容快照，不替换上一完整站点。Windows预览绑定具体release，不需符号链接；生产Nginx仍仅指向核验后的release。后台显示导出状态与路径。进程被强制终止留下容器 `worker.lock` 时，先核实没有导出进程再恢复，不能删除正在使用的锁。
 
+## Agent抽检、概况核验与最终反馈
+
+已实现可复现的排除抽检和概况核验，仍复用同一Responses模型、串行请求、预算停止阈值与离线恢复账本。抽检按标题排除／摘要排除／类型排除分层，保存候选集合、种子、规则哈希、原判断及材料版本；定向难例与随机样本分开。缺摘要项直接标为system／材料不足，不调用模型。
+
+```powershell
+# 只准备样本，不联网、不收费；返回batch_id
+python scripts/workflow.py prepare-quality --mode audit --seed trial-01 --count 12
+python scripts/workflow.py prepare-quality --mode verify --seed trial-01 --count 12
+# 下列命令显式调用付费模型，默认最多一组、每组三篇
+python scripts/workflow.py check-quality --batch-id <批次编号> --max-tokens 6000 --max-groups 1 --group-size 3
+python scripts/workflow.py quality-report --batch-id <批次编号>
+```
+
+verify仅处理有正式摘要与概况的最终候选，检查研究对象、方法、情景／实绩、相关／因果、强度／总量、范围、数字和不确定性。新任务的摘要片段必须逐字匹配；结果记录为agent判断，不能视为人工真值或研究质量认证。材料／反馈变化后旧核验标为过期。重复执行已完成批次不再次付费；核验不自动批准、发布或改写原筛选判断。疑似误排后续如何受控回流、自动准入和全链调度仍待实现，不将首版核验工具称为完整自动loop。
+
+本地后台“来源与运行”提供批次报告；文章详情新增“最终结果反馈（可选）”。用户无需参加初筛，可选择值得读、不相关、相关但本期不优先、内容重复／增量不足、概况有问题。只有“不相关”写为受保护的人工排除；概况有问题会阻止尚未发布稿件继续组期。已发布快照不改写，反馈和英文核验依据均不公开。当前反馈入口是本地后台，未新增公网写接口。
+
+2026-11-12小批量接入验收：3篇概况被agent判为摘要支持，使用5,785 tokens；3条排除抽样中2条缺摘要免调用，另1条被agent判为维持排除，使用2,674 tokens；总计两次串行请求、8,459 tokens。无新文章获批或发布，不由这组样本推算总体误排率。反馈表单已用隔离库在Tabbit中实际提交并重新读取。
+
 ## 出版社接口与尚未解决的部分
 
 发现和摘要补全分别验证。Crossref存在滞后；官方文章未收录时仍可先建立出版社候选。Nature目录已有实现；部分AAAS、PNAS、ACS、Wiley与ScienceDirect入口受限，稳定服务器覆盖尚未验收。

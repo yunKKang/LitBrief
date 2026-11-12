@@ -93,6 +93,18 @@ def main():
     exp = sub.add_parser('export')
     exp.add_argument('--output', type=Path, default=ROOT / 'outputs/public')
     sub.add_parser('backup')
+    qa = sub.add_parser('prepare-quality', help='Prepare reproducible private samples; no AI calls')
+    qa.add_argument('--mode',choices=['audit','verify'],required=True)
+    qa.add_argument('--seed',required=True)
+    qa.add_argument('--count',type=int,default=12)
+    qa.add_argument('--targeted',type=int,nargs='*',default=[])
+    qr = sub.add_parser('quality-report')
+    qr.add_argument('--batch-id',required=True)
+    qc = sub.add_parser('check-quality',help='Explicit bounded agent checking; no approval or publication')
+    qc.add_argument('--batch-id',required=True)
+    qc.add_argument('--max-tokens',required=True,type=int)
+    qc.add_argument('--max-groups',type=int,default=1)
+    qc.add_argument('--group-size',type=int,default=3)
     recover = sub.add_parser('recover-ai', help='Validate and apply a saved batch response without networking')
     recover.add_argument('--request-id', required=True)
     ack = sub.add_parser('acknowledge-ai', help='Record manual billing verification before any explicit requeue')
@@ -118,6 +130,15 @@ def main():
         elif args.command == 'recover-ai':
             from batch_screen import recover
             result = recover(db, args.request_id)
+        elif args.command == 'prepare-quality':
+            from quality import prepare
+            result = prepare(db,args.mode,args.seed,args.count,args.targeted)
+        elif args.command == 'quality-report':
+            from quality import report
+            result = report(db,args.batch_id)
+        elif args.command == 'check-quality':
+            from batch_screen import run
+            result = run(db,args.max_tokens,group_size=args.group_size,max_groups=args.max_groups,quality_batch=args.batch_id)
         elif args.command == 'acknowledge-ai':
             from batch_screen import acknowledge
             result = acknowledge(db, args.request_id, args.note)

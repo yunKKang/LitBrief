@@ -91,8 +91,13 @@ def apply_saved(db, request_id):
     response = json.loads(path.read_text('utf-8'))
     batch = json.loads(request['inputs'])
     titles_only = request['mode'] == 'titles'
+    quality_mode = request['mode'] if request['mode'] in {'audit','verify'} else None
     try:
-        results = validate_group(response, batch, titles_only, partial=True)
+        if quality_mode:
+            from quality import validate
+            results = validate(response, batch, quality_mode)
+        else:
+            results = validate_group(response, batch, titles_only, partial=True)
     except (ValueError, TypeError, KeyError) as exc:
         with db:
             db.execute("UPDATE ai_requests SET status='validation_failed',usage_json=?,detail=?,updated_at=? WHERE id=?",
@@ -107,6 +112,11 @@ def apply_saved(db, request_id):
         for row in batch:
             result = results[row['id']]
             result['request_id'] = request_id
+            if quality_mode:
+                from quality import apply
+                changed = apply(db, row, result, request_id)
+                applied += changed; stale += 1 - changed
+                continue
             if titles_only:
                 result['title_screened'] = True
             state = ('ai_error' if result.get('validation_error') else
@@ -142,13 +152,15 @@ def acknowledge(db, request_id, note):
                    (json.dumps({'note': note, 'action': 'manual authorization for later explicit requeue'}, ensure_ascii=False), now(), request_id))
         # Stop stale screening claims, without overwriting intervening human edits.
         for paper in json.loads(row['inputs']):
+            if row['mode'] in {'audit','verify'}:
+                continue
             db.execute("UPDATE papers SET state='ai_error' WHERE id=? AND revision=? AND state='screening'",
                        (paper['id'], paper['revision']))
     return {'acknowledged': request_id, 'note': 'No request sent; explicit requeue still required'}
 
 
 def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, max_groups=50,
-        *, cache=None, transport=None, config=None, ids=None):
+        *, cache=None, transport=None, config=None, ids=None, quality_batch=None):
     if not 1 <= group_size <= 12 or max_tokens < 1 or max_groups < 1 or cohort not in {'monitoring', 'baseline'}:
         raise ValueError('Invalid batch limits')
     config = config if config is not None else settings()
@@ -169,13 +181,21 @@ def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, ma
                 bool(json.loads(r['result'] or '{}').get('title_screened')) != titles_only]
         if ids:
             rows = [r for r in rows if r['id'] in ids]
+        quality_mode = None
+        if quality_batch:
+            from quality import pending
+            quality_mode, rows = pending(db, quality_batch)
         for offset in range(0, len(rows), group_size):
             if spent >= max_tokens or groups >= max_groups:
                 break
             if groups:
                 time.sleep(max(2, limits.get('request_interval_seconds', 2)))
             batch = [dict(r) for r in rows[offset:offset + group_size]]
-            payload = payload_for(batch, config, titles_only)
+            if quality_mode:
+                from quality import payload_for as quality_payload
+                payload = quality_payload(batch, config, quality_mode)
+            else:
+                payload = payload_for(batch, config, titles_only)
             fingerprint = hashlib.sha256(json.dumps([config['base_url'], payload], sort_keys=True).encode()).hexdigest()
             request_id = uuid4().hex
             result_file = cache / (fingerprint + '.group.json')
@@ -185,12 +205,17 @@ def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, ma
             last_request = db.execute('SELECT status FROM ai_requests WHERE fingerprint=? ORDER BY rowid DESC LIMIT 1', (fingerprint,)).fetchone()
             if last_request and last_request['status'] == 'acknowledged':
                 cached_path = None  # Explicit recovery decision may retire an unusable old cache.
-            mode = 'titles' if titles_only else 'abstracts'
+            mode = quality_mode or ('titles' if titles_only else 'abstracts')
             with db:
                 db.execute('BEGIN IMMEDIATE')
                 for row in batch:
                     if unresolved_ai(db, row['id']):
                         raise ValueError('Unresolved AI request: recover or acknowledge it before another paid attempt')
+                    if quality_mode:
+                        current = db.execute('SELECT revision FROM papers WHERE id=?', (row['id'],)).fetchone()
+                        if not current or current['revision'] != row['revision']:
+                            raise ValueError('Quality input changed; prepare again')
+                        continue  # Quality checks never claim or change the editorial queue.
                     changed = db.execute("""UPDATE papers SET state='screening',revision=revision+1
                       WHERE id=? AND revision=? AND state=? AND human_decision=''""",
                       (row['id'], row['revision'], row['state'])).rowcount
@@ -230,6 +255,8 @@ def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, ma
                 event['error_type'] = type(exc).__name__
                 with db:
                     for row in batch:
+                        if quality_mode:
+                            continue
                         db.execute("UPDATE papers SET state='ai_error' WHERE id=? AND revision=? AND state='screening'",
                                    (row['id'], row['revision']))
                 raise

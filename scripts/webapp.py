@@ -216,6 +216,14 @@ def paper_form(db, paper_id, token):
     body = f'<p class="eyebrow">{h(data["journal_title"])} · #{row["id"]} · {h(STATES[row["state"]])}</p><h1 class="article-title">{h(data["title"])}</h1>'
     if row['material_changed']:
         body += '<p class="notice">原始材料已变化，旧判断已留档。人工排除继续保留；已通过的未发布文章需要重新审核后才能组期。</p>'
+    checks=db.execute("SELECT snapshot,status,result FROM quality_jobs WHERE paper_id=? AND result IS NOT NULL ORDER BY rowid DESC LIMIT 3",(paper_id,)).fetchall()
+    if checks:
+        body+='<section><h2>Agent 核验记录</h2><p class="muted">这是系统复核结果，不代表人工真值或研究质量认证。</p>'
+        for check in checks:
+            snapshot=json.loads(check['snapshot']); outcome=json.loads(check['result'])
+            state='已过期' if snapshot['revision']!=row['revision'] else check['status']
+            body+=f'<p>{h(outcome.get("mode"))} · {h(state)} · {h(outcome.get("verdict"))}：{h(outcome.get("reason"))}</p>'
+        body+='</section>'
     if url:
         body += f'<p><a href="{h(url)}" target="_blank" rel="noopener noreferrer">打开原文 ↗</a></p>'
     body += f'<div class="review-grid"><section><h2>摘要依据</h2><p class="muted">{h(data.get("abstract_source") or "缺少可核实摘要")}</p><div class="abstract">{h(data.get("abstract") or "保留待补材料，不凭标题生成研究结论。")}</div><h2>AI 判断</h2><p>{h(result.get("decision"))} · {h(result.get("reason"))}</p><blockquote>{h(evidence)}</blockquote></section>'
@@ -226,6 +234,11 @@ def paper_form(db, paper_id, token):
         body += f'<section><h2>补充经核实的摘要</h2><p class="notice">补全状态：{h(material_labels.get(row["enrichment_state"],row["enrichment_state"]))}。这不代表出版社一定没有摘要。{"当前还需核实 DOI 或文章页面。" if not data.get("doi") else ""}</p><p>可在高校认证浏览器中核对原文后粘贴。只填正式 Abstract，不填 RSS 导读或搜索摘要。</p><form method="post" action="/abstract"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{paper_id}"><input type="hidden" name="revision" value="{row["revision"]}"><label>原文网页 URL<input type="url" name="source_url" required></label><label>正式摘要<textarea name="abstract" rows="8" required></textarea></label><label class="check"><input type="checkbox" name="verified" value="yes" required>已核对标题和 DOI，确认摘要属于本篇文章</label><button>保存摘要并进入待筛选队列</button></form></section>'
     if schedule and row['state']=='awaiting_abstract':
         body+=f'<p class="notice">补充尝试 {schedule["attempts"]} 次 · '+(f'下次尝试：{h(schedule["next_attempt_at"])}' if schedule['next_attempt_at'] else '自动尝试已暂停，请人工核对来源或材料。')+'</p>'
+    labels={'relevant':'值得读','not_relevant':'不相关','low_priority':'相关但本期不优先','duplicate':'内容重复／增量不足','summary_issue':'概况有问题'}
+    body+=f'<section><h2>最终结果反馈（可选）</h2><p>无需参与初筛。反馈留在内部，不改写往期；“不相关”会保护为人工排除，其余反馈不改变学科边界。</p><form method="post" action="/feedback"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{paper_id}"><input type="hidden" name="revision" value="{row["revision"]}"><label>反馈类型<select name="category">'+''.join(f'<option value="{key}">{value}</option>' for key,value in labels.items())+'</select></label><label>具体意见<textarea name="note" required rows="3"></textarea></label><button>保存反馈</button></form>'
+    for feedback in db.execute('SELECT category,note FROM feedback WHERE paper_id=? ORDER BY id DESC LIMIT 5',(paper_id,)):
+        body+=f'<p>{h(labels.get(feedback["category"],feedback["category"]))}：{h(feedback["note"])}</p>'
+    body+='</section>'
     return body
 
 
@@ -257,7 +270,11 @@ def sources_page(db):
         probe=probes.get(seed,{})
         diagnostic=f'<details><summary>{h(labels.get(probe.get("classification"),probe.get("classification","未测试")))}</summary><p>HTTP {h(probe.get("status"))} · {h(", ".join(probe.get("signals",[])))}</p><p>{h(probe.get("solution"))}</p></details>'
         body += f'<tr><th>{h(source["title"])}</th><td>{sum(counts.values())}</td><td>{counts.get("awaiting_abstract",0)}</td><td>{counts.get("approved",0)+counts.get("awaiting_review",0)}</td><td>{counts.get("rejected",0)+counts.get("ai_excluded",0)+counts.get("type_excluded",0)}</td><td>{diagnostic}</td></tr>'
-    body += '</tbody></table></div><h2>模型用量</h2>'
+    body += '</tbody></table></div><h2>自动抽检与概况核验</h2><p>随机抽样、定向难例和用户反馈分开保留。Agent 分歧是复查线索，不是人工确认的误排率。</p>'
+    for batch in db.execute('SELECT id,mode,created_at FROM quality_batches ORDER BY created_at DESC LIMIT 12'):
+        label='排除抽检' if batch['mode']=='audit' else '概况核验'
+        body+=f'<p><a href="/quality?id={h(batch["id"])}">{label} · {h(batch["created_at"])}</a></p>'
+    body+='<h2>模型用量</h2>'
     pending_requests = db.execute("SELECT id,mode,status,usage_json FROM ai_requests WHERE status NOT IN ('applied','acknowledged') ORDER BY created_at").fetchall()
     if pending_requests:
         body += '<h3>调用恢复待处理</h3><p>先恢复已保存响应；没有响应时核对供应商计费，再明确解除暂停。重新排队不会绕过未解决的调用。</p><ul>'
@@ -332,6 +349,13 @@ def make_handler(db_path, token, public):
                         body = issues_page(db, token)
                     elif path.path == '/sources':
                         body = sources_page(db)
+                    elif path.path == '/quality':
+                        from quality import report
+                        report_data=report(db,query['id'][0])
+                        body='<h1>系统核验报告</h1><p class="notice">仅为 agent／规则复核，不自动批准、发布或放宽边界。无摘要项不会调用模型；过期结果不能用于当前材料。</p>'
+                        for item in report_data['items']:
+                            result=item['result']
+                            body+=f'<article class="paper"><p class="paper-meta">{h(item["journal"])} · {h(item["sample_kind"])} · {h(item["stage"])} · {h(item["status"])}</p><h3><a href="/paper?id={item["paper_id"]}">{h(item["title"])}</a></h3><p>{h(result.get("verdict","等待核验"))}：{h(result.get("reason",""))}</p></article>'
                     elif path.path == '/preview':
                         body = issue_body(db, query['id'][0], preview=True)
                         # Draft previews stay on authenticated-by-loopback review routes.
@@ -359,6 +383,9 @@ def make_handler(db_path, token, public):
                 with closing(connect(db_path)) as db:
                     if self.path == '/review':
                         review(db, int(form['id'][0]), form['action'][0], form.get('summary', [''])[0], form.get('topics', []), form.get('note', [''])[0], int(form['revision'][0]))
+                    elif self.path == '/feedback':
+                        from quality import feedback
+                        feedback(db,int(form['id'][0]),form['category'][0],form.get('note',[''])[0],int(form['revision'][0]))
                     elif self.path == '/prepare':
                         build_issue(db)
                     elif self.path == '/abstract':
@@ -392,7 +419,8 @@ def make_handler(db_path, token, public):
                     else:
                         return self.send(404, 'Not found')
                 self.send_response(303)
-                self.send_header('Location', '/' if self.path in {'/review', '/abstract'} else '/issues')
+                location = '/paper?id='+str(int(form['id'][0])) if self.path == '/feedback' else '/' if self.path in {'/review','/abstract'} else '/issues'
+                self.send_header('Location', location)
                 self.end_headers()
             except (ValueError, KeyError) as exc:
                 self.send(400, shell('操作未完成', f'<h1>操作未完成</h1><p>{h(exc)}</p><a href="/">返回工作台</a>', admin=True))

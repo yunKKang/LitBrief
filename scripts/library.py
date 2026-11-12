@@ -104,6 +104,15 @@ def connect(path=DATA / 'library.sqlite3'):
       inputs TEXT NOT NULL, request_json TEXT NOT NULL, response_path TEXT NOT NULL,
       status TEXT NOT NULL, usage_json TEXT, detail TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL)''')
+    db.execute('''CREATE TABLE IF NOT EXISTS quality_batches (
+      id TEXT PRIMARY KEY, mode TEXT NOT NULL, created_at TEXT NOT NULL, metadata TEXT NOT NULL)''')
+    db.execute('''CREATE TABLE IF NOT EXISTS quality_jobs (
+      batch_id TEXT NOT NULL REFERENCES quality_batches(id), paper_id INTEGER NOT NULL REFERENCES papers(id),
+      snapshot TEXT NOT NULL, status TEXT NOT NULL, result TEXT, request_id TEXT,
+      PRIMARY KEY(batch_id,paper_id))''')
+    db.execute('''CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY, paper_id INTEGER NOT NULL REFERENCES papers(id), at TEXT NOT NULL,
+      actor TEXT NOT NULL, category TEXT NOT NULL, note TEXT NOT NULL, snapshot TEXT NOT NULL)''')
     db.commit()
     return db
 
