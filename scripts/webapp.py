@@ -24,7 +24,9 @@ def issue_body(db, issue_id, preview=False):
     if not issue:
         raise ValueError('Unknown issue')
     items = [json.loads(r[0]) for r in db.execute('SELECT snapshot FROM issue_items WHERE issue_id=? ORDER BY paper_id', (issue_id,))]
-    return render_collection(items, issue_id, issue['end_date'], preview=preview)
+    body=render_collection(items, issue_id, issue['end_date'], preview=preview)
+    notice=db.execute('SELECT note FROM issue_notices WHERE issue_id=?',(issue_id,)).fetchone()
+    return body+(f'<p class="notice">{h(notice[0])}</p>' if notice else '')
 
 
 def atomic_write(path, text):
@@ -270,7 +272,14 @@ def sources_page(db):
         probe=probes.get(seed,{})
         diagnostic=f'<details><summary>{h(labels.get(probe.get("classification"),probe.get("classification","未测试")))}</summary><p>HTTP {h(probe.get("status"))} · {h(", ".join(probe.get("signals",[])))}</p><p>{h(probe.get("solution"))}</p></details>'
         body += f'<tr><th>{h(source["title"])}</th><td>{sum(counts.values())}</td><td>{counts.get("awaiting_abstract",0)}</td><td>{counts.get("approved",0)+counts.get("awaiting_review",0)}</td><td>{counts.get("rejected",0)+counts.get("ai_excluded",0)+counts.get("type_excluded",0)}</td><td>{diagnostic}</td></tr>'
-    body += '</tbody></table></div><h2>自动抽检与概况核验</h2><p>随机抽样、定向难例和用户反馈分开保留。Agent 分歧是复查线索，不是人工确认的误排率。</p>'
+    body += '</tbody></table></div>'
+    last_cycle=db.execute("SELECT at,status,detail FROM runs WHERE kind='cycle' ORDER BY id DESC LIMIT 1").fetchone()
+    if last_cycle:
+        cycle=json.loads(last_cycle['detail']);gates=cycle.get('admission',[])
+        eligible=sum(bool(g.get('eligible')) for g in gates)
+        mode='离线影子检查' if cycle.get('mode')=='offline_shadow' else '实际处理'
+        body+=f'<h2>最近一次自动流程</h2><p>{h(last_cycle["at"])} · {mode} · 最终候选 {len(gates)} 篇，其中 {eligible} 篇可准入。计入本轮的用量 {h(cycle.get("spent_tokens",0))} tokens。</p><p class="muted">影子检查不审批或发布；本地导出成功也不代表已经上传服务器。</p>'
+    body += '<h2>自动抽检与概况核验</h2><p>随机抽样、定向难例和用户反馈分开保留。Agent 分歧是复查线索，不是人工确认的误排率。</p>'
     for batch in db.execute('SELECT id,mode,created_at FROM quality_batches ORDER BY created_at DESC LIMIT 12'):
         label='排除抽检' if batch['mode']=='audit' else '概况核验'
         body+=f'<p><a href="/quality?id={h(batch["id"])}">{label} · {h(batch["created_at"])}</a></p>'

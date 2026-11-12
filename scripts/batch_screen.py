@@ -101,7 +101,7 @@ def apply_saved(db, request_id):
     except (ValueError, TypeError, KeyError) as exc:
         with db:
             db.execute("UPDATE ai_requests SET status='validation_failed',usage_json=?,detail=?,updated_at=? WHERE id=?",
-                       (json.dumps(response.get('usage')), json.dumps({'error_type': type(exc).__name__}), now(), request_id))
+                       (json.dumps(response.get('usage')), json.dumps({**json.loads(request['detail']), 'error_type': type(exc).__name__}), now(), request_id))
         raise
     applied = stale = 0
     with db:
@@ -119,18 +119,21 @@ def apply_saved(db, request_id):
                 continue
             if titles_only:
                 result['title_screened'] = True
+            if row.get('screening_policy_hash'):
+                result['policy_hash'] = row['screening_policy_hash']
             state = ('ai_error' if result.get('validation_error') else
                      'ai_excluded' if result['decision'] == 'exclude' else
                      ('pending' if json.loads(row['data']).get('abstract') else 'awaiting_abstract') if titles_only else
                      'awaiting_review' if result['decision'] == 'include' else 'needs_material')
-            changed = db.execute("""UPDATE papers SET state=?,result=?,topics=?,revision=revision+1,updated_at=?
+            changed = db.execute("""UPDATE papers SET state=?,result=?,topics=?,revision=revision+1,updated_at=?,
+              material_changed=CASE WHEN ? THEN material_changed ELSE 0 END,approval_actor=''
               WHERE id=? AND revision=? AND state IN ('screening','ai_error') AND human_decision=''
               AND cohort=? AND journal=?""",
               (state, json.dumps(result, ensure_ascii=False), json.dumps(result.get('topics', []), ensure_ascii=False),
-               now(), row['id'], row['revision'], row['cohort'], row['journal'])).rowcount if row['journal'] in registry() else 0
+               now(), titles_only, row['id'], row['revision'], row['cohort'], row['journal'])).rowcount if row['journal'] in registry() else 0
             applied += changed
             stale += 1 - changed
-        detail = {'applied': applied, 'stale_results_ignored': stale}
+        detail = {**json.loads(request['detail']), 'applied': applied, 'stale_results_ignored': stale}
         db.execute("UPDATE ai_requests SET status='applied',usage_json=?,detail=?,updated_at=? WHERE id=?",
                    (json.dumps(response.get('usage')), json.dumps(detail), now(), request_id))
     return detail
@@ -160,7 +163,7 @@ def acknowledge(db, request_id, note):
 
 
 def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, max_groups=50,
-        *, cache=None, transport=None, config=None, ids=None, quality_batch=None):
+        *, cache=None, transport=None, config=None, ids=None, quality_batch=None, cycle_id=None, skip_blocked=False):
     if not 1 <= group_size <= 12 or max_tokens < 1 or max_groups < 1 or cohort not in {'monitoring', 'baseline'}:
         raise ValueError('Invalid batch limits')
     config = config if config is not None else settings()
@@ -185,12 +188,17 @@ def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, ma
         if quality_batch:
             from quality import pending
             quality_mode, rows = pending(db, quality_batch)
+        if skip_blocked:
+            rows = [r for r in rows if not unresolved_ai(db,r['id'])]
         for offset in range(0, len(rows), group_size):
             if spent >= max_tokens or groups >= max_groups:
                 break
             if groups:
                 time.sleep(max(2, limits.get('request_interval_seconds', 2)))
             batch = [dict(r) for r in rows[offset:offset + group_size]]
+            from quality import policy
+            for row in batch:
+                row['screening_policy_hash'] = hashlib.sha256(policy().encode()).hexdigest()
             if quality_mode:
                 from quality import payload_for as quality_payload
                 payload = quality_payload(batch, config, quality_mode)
@@ -225,7 +233,8 @@ def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, ma
                 db.execute('INSERT INTO ai_requests VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                            (request_id, fingerprint, mode, json.dumps(batch, ensure_ascii=False),
                             json.dumps(payload, ensure_ascii=False), str(saved.resolve()),
-                            'prepared' if cached_path else 'billing_unknown', None, '{}', now(), now()))
+                            'prepared' if cached_path else 'billing_unknown', None,
+                            json.dumps({'cycle_id':cycle_id,'cache_reused':bool(cached_path)}), now(), now()))
             started = time.monotonic()
             event = {'at': now(), 'request_id': request_id, 'fingerprint': fingerprint,
                      'requested_model': config['model'], 'requested_tier': config['tier'],
@@ -247,7 +256,7 @@ def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, ma
                 event['state'] = 'completed'
                 if not cached_path:
                     usage = response.get('usage') or {}
-                    if not isinstance(usage.get('total_tokens'), int):
+                    if type(usage.get('total_tokens')) is not int or usage['total_tokens']<0:
                         raise RuntimeError('Missing token usage; stop for billing verification')
                     spent += usage['total_tokens']
                 print(json.dumps({'processed': processed, 'tokens': spent, 'request_id': request_id}), flush=True)

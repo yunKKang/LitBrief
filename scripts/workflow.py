@@ -93,6 +93,13 @@ def main():
     exp = sub.add_parser('export')
     exp.add_argument('--output', type=Path, default=ROOT / 'outputs/public')
     sub.add_parser('backup')
+    loop = sub.add_parser('run-cycle', help='Offline shadow by default; explicit live processing and separate local publication')
+    loop.add_argument('--live', action='store_true', help='Collect and run paid AI under a shared token threshold')
+    loop.add_argument('--publish', action='store_true', help='Requires publication_mode=automatic; confirms closed issues and exports locally')
+    loop.add_argument('--max-tokens', type=int, default=0)
+    loop.add_argument('--max-groups', type=int, default=3)
+    loop.add_argument('--collect-only', dest='only', nargs='+', help='Limit discovery to these ISSNs; existing candidate processing remains global')
+    loop.add_argument('--output', type=Path, default=ROOT/'outputs/public')
     qa = sub.add_parser('prepare-quality', help='Prepare reproducible private samples; no AI calls')
     qa.add_argument('--mode',choices=['audit','verify'],required=True)
     qa.add_argument('--seed',required=True)
@@ -130,6 +137,10 @@ def main():
         elif args.command == 'recover-ai':
             from batch_screen import recover
             result = recover(db, args.request_id)
+        elif args.command == 'run-cycle':
+            from automation import cycle
+            result=cycle(db,live=args.live,publish=args.publish,max_tokens=args.max_tokens,
+                         max_groups=args.max_groups,only=args.only,output=args.output)
         elif args.command == 'prepare-quality':
             from quality import prepare
             result = prepare(db,args.mode,args.seed,args.count,args.targeted)

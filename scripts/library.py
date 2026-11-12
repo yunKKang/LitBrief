@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+import os
+from threading import local
 from urllib.parse import urlsplit, urlunsplit
 
 from audit_sources import doi, plain, combined_works
@@ -12,6 +14,7 @@ from audit_sources import doi, plain, combined_works
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'outputs/library'
 TOPICS = ['产业与基础设施绿色转型', '全球生产网络与环境责任', '国际绿色产品标准', '供应链管理与韧性', '住房与建成环境']
+_locks = local()
 
 
 def now():
@@ -93,6 +96,9 @@ def connect(path=DATA / 'library.sqlite3'):
         db.execute("""UPDATE papers SET state='needs_review',material_changed=1,revision=revision+1
           WHERE human_decision='approve' AND state!='approved' AND id NOT IN
           (SELECT paper_id FROM issue_items JOIN issues ON issues.id=issue_id WHERE issues.state='published')""")
+    if 'approval_actor' not in columns:
+        db.execute("ALTER TABLE papers ADD COLUMN approval_actor TEXT NOT NULL DEFAULT ''")
+        db.execute("UPDATE papers SET approval_actor='human' WHERE human_decision='approve'")
     db.execute('''CREATE TABLE IF NOT EXISTS enrichment_schedule (
       paper_id INTEGER PRIMARY KEY REFERENCES papers(id), input_digest TEXT NOT NULL,
       attempts INTEGER NOT NULL, next_attempt_at TEXT, last_status TEXT NOT NULL,
@@ -113,6 +119,8 @@ def connect(path=DATA / 'library.sqlite3'):
     db.execute('''CREATE TABLE IF NOT EXISTS feedback (
       id INTEGER PRIMARY KEY, paper_id INTEGER NOT NULL REFERENCES papers(id), at TEXT NOT NULL,
       actor TEXT NOT NULL, category TEXT NOT NULL, note TEXT NOT NULL, snapshot TEXT NOT NULL)''')
+    db.execute('''CREATE TABLE IF NOT EXISTS issue_notices (
+      issue_id TEXT PRIMARY KEY REFERENCES issues(id), note TEXT NOT NULL)''')
     db.commit()
     return db
 
@@ -334,6 +342,7 @@ def review(db, paper_id, action, summary, topics, note, revision):
                    (state, json.dumps(result, ensure_ascii=False), json.dumps(topics, ensure_ascii=False), now(), paper_id))
         db.execute('UPDATE papers SET human_decision=?,material_changed=0 WHERE id=?',
                    ('' if action == 'requeue' else action, paper_id))
+        db.execute('UPDATE papers SET approval_actor=? WHERE id=?',('human' if action=='approve' else '',paper_id))
         db.execute('INSERT INTO reviews(paper_id,at,action,note) VALUES(?,?,?,?)', (paper_id, now(), action, note))
 
 
@@ -350,7 +359,7 @@ def period(day=None):
     return start.isoformat(), (start + timedelta(days=cfg['issue_days'] - 1)).isoformat()
 
 
-def build_issue(db, day=None):
+def build_issue(db, day=None, *, only_ids=None, cutoff=None):
     start, end = period(day)
     with db:
         db.execute('BEGIN IMMEDIATE')
@@ -359,7 +368,11 @@ def build_issue(db, day=None):
             return start  # Daily preparation is idempotent; late papers wait for the next period.
         db.execute("INSERT OR IGNORE INTO issues VALUES(?,?,'draft',?,NULL)", (start, end, now()))
         for row in db.execute("SELECT * FROM papers WHERE state='approved' AND material_changed=0 AND id NOT IN (SELECT paper_id FROM issue_items)").fetchall():
+            if only_ids is not None and row['id'] not in only_ids:
+                continue
             data, result = json.loads(row['data']), json.loads(row['result'])
+            if cutoff and (not publication_day(data) or publication_day(data)>cutoff):
+                continue
             source = registry().get(row['journal'])
             if not source:
                 continue
@@ -389,7 +402,12 @@ def publish_issue(db, issue_id):
 
 @contextmanager
 def worker_lock(folder=DATA):
-    folder = Path(folder)
+    folder = Path(folder).resolve()
+    key = (os.getpid(), str(folder))
+    held = getattr(_locks, 'held', set())
+    if key in held:
+        yield  # Same-thread orchestration may call the existing serial stages.
+        return
     folder.mkdir(parents=True, exist_ok=True)
     lock = folder / 'worker.lock'
     try:
@@ -397,9 +415,10 @@ def worker_lock(folder=DATA):
     except FileExistsError:
         raise RuntimeError('Another worker may be running; inspect worker.lock before manual recovery') from None
     try:
-        import os
         with stream:
             stream.write(json.dumps({'pid': os.getpid(), 'started': now()}))
+        _locks.held = held | {key}
         yield
     finally:
+        _locks.held = held
         lock.unlink()

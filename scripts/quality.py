@@ -18,7 +18,7 @@ def stage(row):
     return 'type' if row['state'] == 'type_excluded' else 'title' if result.get('title_screened') else 'abstract'
 
 
-def prepare(db, mode, seed, count=12, targeted=()):
+def prepare(db, mode, seed, count=12, targeted=(), only_ids=None):
     if mode not in {'audit', 'verify'} or not seed or not 1 <= count <= 50 or len(targeted) > 5:
         raise ValueError('Invalid quality batch limits')
     active = registry()
@@ -27,9 +27,12 @@ def prepare(db, mode, seed, count=12, targeted=()):
         db.execute('BEGIN IMMEDIATE')
         rows = [dict(r) for r in db.execute("SELECT * FROM papers WHERE cohort='monitoring' ORDER BY id")
                 if r['state'] in states and r['journal'] in active and r['human_decision'] != 'reject']
+        if only_ids is not None:
+            rows=[r for r in rows if r['id'] in only_ids]
         if mode == 'verify':
+            published={r[0] for r in db.execute("SELECT paper_id FROM issue_items JOIN issues ON issues.id=issue_id WHERE state='published'")}
             rows = [r for r in rows if json.loads(r['data']).get('abstract') and
-                    json.loads(r['result'] or '{}').get('summary') and not r['material_changed']]
+                    json.loads(r['result'] or '{}').get('summary') and not r['material_changed'] and r['id'] not in published]
         by_id = {r['id']: r for r in rows}
         if any(i not in by_id for i in targeted):
             raise ValueError('Targeted IDs must belong to this eligible population')
