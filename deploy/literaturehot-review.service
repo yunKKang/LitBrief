@@ -1,0 +1,20 @@
+[Unit]
+Description=LiteratureHOT loopback review service
+After=network.target
+
+[Service]
+Type=simple
+User=literaturehot
+Group=literaturehot
+WorkingDirectory=/opt/literaturehot
+ExecStart=/usr/bin/python3 scripts/webapp.py --port 8766
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/literaturehot/outputs
+
+[Install]
+WantedBy=multi-user.target

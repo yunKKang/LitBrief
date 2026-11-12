@@ -1,0 +1,22 @@
+# Proposed hostname; activate only after DNS and certificate provisioning.
+# Isolated virtual host: does not modify the existing lab site.
+server {
+    listen 80;
+    server_name literature.sustainable-systems.world;
+    location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
+    location / { return 301 https://$host$request_uri; }
+}
+server {
+    listen 443 ssl;
+    server_name literature.sustainable-systems.world;
+    ssl_certificate /etc/letsencrypt/live/literature.sustainable-systems.world/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/literature.sustainable-systems.world/privkey.pem;
+    root /var/www/literaturehot/current;
+    index index.html;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header X-Frame-Options DENY always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'" always;
+    location ~ /\. { deny all; }
+    location / { try_files $uri $uri/ =404; }
+}

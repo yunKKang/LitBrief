@@ -1,0 +1,412 @@
+[
+  {
+    "title": "Nature",
+    "seed_issn": "0028-0836",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/nature/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/nature.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
+      }
+    ]
+  },
+  {
+    "title": "Science",
+    "seed_issn": "0036-8075",
+    "display": "重点文献",
+    "publisher_family": "Science",
+    "homepage": "https://www.science.org/journal/science",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science",
+        "role": "latest-item cross-check",
+        "discovery_note": "Candidate publisher endpoint; acceptance requires parsed scholarly items and identity check, not HTTP 200 alone."
+      }
+    ]
+  },
+  {
+    "title": "Proceedings of the National Academy of Sciences of the United States of America",
+    "seed_issn": "0027-8424",
+    "display": "重点文献",
+    "publisher_family": "Proceedings of the National Academy of Sciences of the United States of America",
+    "homepage": "https://www.pnas.org/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.pnas.org/action/showFeed?type=etoc&feed=rss&jc=pnas",
+        "role": "latest-item cross-check",
+        "discovery_note": "Candidate publisher endpoint; acceptance requires parsed scholarly items and identity check, not HTTP 200 alone."
+      }
+    ]
+  },
+  {
+    "title": "Nature Communications",
+    "seed_issn": "2041-1723",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/ncomms/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/ncomms.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
+      }
+    ]
+  },
+  {
+    "title": "Science Advances",
+    "seed_issn": "2375-2548",
+    "display": "重点文献",
+    "publisher_family": "Science Advances",
+    "homepage": "https://www.science.org/journal/sciadv",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=sciadv",
+        "role": "latest-item cross-check",
+        "discovery_note": "Candidate publisher endpoint; acceptance requires parsed scholarly items and identity check, not HTTP 200 alone."
+      }
+    ]
+  },
+  {
+    "title": "Nature Sustainability",
+    "seed_issn": "2398-9629",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/natsustain/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/natsustain.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
+      }
+    ]
+  },
+  {
+    "title": "Nature Energy",
+    "seed_issn": "2058-7546",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/nenergy/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/nenergy.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
+      }
+    ]
+  },
+  {
+    "title": "Nature Climate Change",
+    "seed_issn": "1758-678X",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/nclimate/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/nclimate.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
+      }
+    ]
+  },
+  {
+    "title": "Nature Cities",
+    "seed_issn": "2731-9997",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/natcities/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/natcities.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
+      }
+    ]
+  },
+  {
+    "title": "Nature Water",
+    "seed_issn": "2731-6084",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/natwater/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/natwater.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
+      }
+    ]
+  },
+  {
+    "title": "One Earth",
+    "seed_issn": "2590-3330",
+    "display": "重点文献",
+    "publisher_family": "ScienceDirect",
+    "homepage": "https://www.sciencedirect.com/journal/one-earth",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://rss.sciencedirect.com/publication/science/25903322",
+        "role": "latest-item cross-check",
+        "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
+      }
+    ],
+    "crossref_query_issn": "2590-3322",
+    "identity_note": "The CAS seed 2590-3330 returned Crossref journal HTTP 404. Crossref 2590-3322 returns One Earth and matches the ScienceDirect publisher feed; keep original seed for traceability."
+  },
+  {
+    "title": "Environmental Science & Ecotechnology",
+    "seed_issn": "2666-4984",
+    "display": "重点文献",
+    "publisher_family": "ScienceDirect",
+    "homepage": "https://www.sciencedirect.com/journal/environmental-science-and-ecotechnology",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://rss.sciencedirect.com/publication/science/26664984",
+        "role": "latest-item cross-check",
+        "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
+      }
+    ]
+  },
+  {
+    "title": "Renewable and Sustainable Energy Reviews",
+    "seed_issn": "1364-0321",
+    "display": "重点文献",
+    "publisher_family": "ScienceDirect",
+    "homepage": "https://www.sciencedirect.com/journal/renewable-and-sustainable-energy-reviews",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://rss.sciencedirect.com/publication/science/13640321",
+        "role": "latest-item cross-check",
+        "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
+      }
+    ]
+  },
+  {
+    "title": "Earth's Future",
+    "seed_issn": "2328-4277",
+    "display": "重点文献",
+    "publisher_family": "Earth's Future",
+    "homepage": "https://agupubs.onlinelibrary.wiley.com/journal/23284277",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://agupubs.onlinelibrary.wiley.com/feed/23284277/most-recent",
+        "role": "latest-item cross-check",
+        "discovery_note": "Candidate publisher endpoint; acceptance requires parsed scholarly items and identity check, not HTTP 200 alone."
+      }
+    ]
+  },
+  {
+    "title": "Nature Geoscience",
+    "seed_issn": "1752-0894",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/ngeo/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/ngeo.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
+      }
+    ]
+  },
+  {
+    "title": "Nature Reviews Earth & Environment",
+    "seed_issn": "2662-138X",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/natrevearthenviron/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/natrevearthenviron.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
+      }
+    ]
+  },
+  {
+    "title": "Nature Reviews Clean Technology",
+    "seed_issn": "3005-0685",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/nrct/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/nrct.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
+      }
+    ]
+  },
+  {
+    "title": "Environmental Science & Technology",
+    "seed_issn": "0013-936X",
+    "display": "重点文献",
+    "publisher_family": "Environmental Science & Technology",
+    "homepage": "https://pubs.acs.org/journal/esthag",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://pubs.acs.org/action/showFeed?type=etoc&feed=rss&jc=esthag",
+        "role": "latest-item cross-check",
+        "discovery_note": "Candidate publisher endpoint; acceptance requires parsed scholarly items and identity check, not HTTP 200 alone."
+      }
+    ]
+  },
+  {
+    "title": "Global Environmental Change",
+    "seed_issn": "0959-3780",
+    "display": "相关文献列表",
+    "publisher_family": "ScienceDirect",
+    "homepage": "https://www.sciencedirect.com/journal/global-environmental-change",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://rss.sciencedirect.com/publication/science/09593780",
+        "role": "latest-item cross-check",
+        "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
+      }
+    ]
+  },
+  {
+    "title": "Energy Economics",
+    "seed_issn": "0140-9883",
+    "display": "相关文献列表",
+    "publisher_family": "ScienceDirect",
+    "homepage": "https://www.sciencedirect.com/journal/energy-economics",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://rss.sciencedirect.com/publication/science/01409883",
+        "role": "latest-item cross-check",
+        "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
+      }
+    ]
+  },
+  {
+    "title": "Communications Earth & Environment",
+    "seed_issn": "2662-4435",
+    "display": "相关文献列表",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/commsenv/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/commsenv.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Added explicitly by user during source audit on 2026-11-11; verify publisher feed and full article catalogue."
+      }
+    ]
+  },
+  {
+    "title": "Nature Food",
+    "seed_issn": "2662-1355",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/natfood/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/natfood.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Explicitly added by user on 2026-11-11; publisher catalogue is primary for discovery."
+      }
+    ]
+  },
+  {
+    "title": "Nature Health",
+    "seed_issn": "3005-0693",
+    "display": "重点文献",
+    "publisher_family": "Nature Portfolio",
+    "homepage": "https://www.nature.com/naturehealth/",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://www.nature.com/naturehealth.rss",
+        "role": "latest-item cross-check",
+        "discovery_note": "Explicitly added by user on 2026-11-11; publisher catalogue is primary for discovery."
+      }
+    ]
+  },
+  {
+    "title": "The Lancet Planetary Health",
+    "seed_issn": "2542-5196",
+    "display": "重点文献",
+    "publisher_family": "ScienceDirect",
+    "homepage": "https://www.sciencedirect.com/journal/the-lancet-planetary-health",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://rss.sciencedirect.com/publication/science/25425196",
+        "role": "latest-item cross-check",
+        "discovery_note": "Explicitly added by user on 2026-11-11; verify latest online articles separately from issue dates."
+      }
+    ]
+  },
+  {
+    "title": "Resources, Conservation and Recycling",
+    "seed_issn": "0921-3449",
+    "display": "相关文献列表",
+    "publisher_family": "ScienceDirect",
+    "homepage": "https://www.sciencedirect.com/journal/resources-conservation-and-recycling",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://rss.sciencedirect.com/publication/science/09213449",
+        "role": "latest-item cross-check",
+        "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
+      }
+    ],
+    "trial_note": "User restored this source for trial on 2026-11-11; consider lower priority if processing burden outweighs reading value. No automatic truncation or schedule change."
+  },
+  {
+    "title": "Applied Energy",
+    "seed_issn": "0306-2619",
+    "display": "相关文献列表",
+    "publisher_family": "ScienceDirect",
+    "homepage": "https://www.sciencedirect.com/journal/applied-energy",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://rss.sciencedirect.com/publication/science/03062619",
+        "role": "latest-item cross-check",
+        "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
+      }
+    ],
+    "trial_note": "User restored this source for trial on 2026-11-11; consider lower priority if processing burden outweighs reading value. No automatic truncation or schedule change."
+  },
+  {
+    "title": "Building and Environment",
+    "seed_issn": "0360-1323",
+    "display": "相关文献列表",
+    "publisher_family": "ScienceDirect",
+    "homepage": "https://www.sciencedirect.com/journal/building-and-environment",
+    "publisher_sources": [
+      {
+        "kind": "rss",
+        "url": "https://rss.sciencedirect.com/publication/science/03601323",
+        "role": "latest-item cross-check",
+        "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
+      }
+    ],
+    "trial_note": "User restored this source for trial on 2026-11-11; consider lower priority if processing burden outweighs reading value. No automatic truncation or schedule change."
+  }
+]

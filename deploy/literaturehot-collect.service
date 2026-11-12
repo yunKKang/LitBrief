@@ -1,0 +1,19 @@
+[Unit]
+Description=LiteratureHOT daily publisher discovery
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=literaturehot
+Group=literaturehot
+WorkingDirectory=/opt/literaturehot
+ExecStart=/usr/bin/python3 scripts/workflow.py collect
+ExecStart=/usr/bin/python3 scripts/workflow.py prepare-issue
+UMask=0077
+TimeoutStartSec=7200
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/literaturehot/outputs

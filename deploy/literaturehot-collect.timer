@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily LiteratureHOT collection (no paid AI or automatic publishing)
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 Asia/Taipei
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

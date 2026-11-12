@@ -1,0 +1,255 @@
+/* Paper light theme follows ~/.claude/design.md v3. Dark keeps the lab's navy identity. */
+:root {
+  color-scheme:light;
+  --bg:#f6f1e7; --surface:#ece5d6; --sidebar:#f1ebdf;
+  --ink:#1a1816; --body:#2e2b27; --muted:#5e5950;
+  --line:#dcd3c3; --rule:#1a1816; --control-line:#918675;
+  --accent:#b04a24; --active:#2f6f86; --focus:#2f6f86;
+  --kai:'Reader WenKai','LXGW WenKai','LXGW WenKai Screen','霞鹜文楷','Noto Serif SC',Georgia,serif;
+  --sans:'Inter','Noto Sans SC','MiSans','PingFang SC','Microsoft YaHei',sans-serif;
+  --mono:'JetBrains Mono','Cascadia Code',Consolas,monospace;
+}
+:root[data-theme=dark] {
+  color-scheme:dark;
+  --bg:#14213d; --surface:#1b2a43; --sidebar:#101b31;
+  --ink:#f0ece3; --body:#d1d6de; --muted:#aab7c9;
+  --line:#34435d; --rule:#61738a; --control-line:#718199;
+  --accent:#deb6a5; --active:#b0c5df; --focus:#e3c186;
+}
+* { box-sizing:border-box }
+html { scroll-behavior:smooth }
+body { margin:0; background:var(--bg); color:var(--body); font:17px/1.75 var(--kai); font-variant-numeric:lining-nums }
+a { color:var(--accent); text-decoration-thickness:1px; text-underline-offset:4px }
+a:hover { text-decoration-thickness:2px }
+button,input,textarea,select { font:inherit; color:inherit }
+button { cursor:pointer }
+h1,h2,h3 { font-family:var(--kai); font-weight:500; color:var(--ink); letter-spacing:0 }
+h1 { font-size:38px; line-height:1.35; margin:0 0 10px }
+h2 { font-size:25px; line-height:1.45; margin:0 }
+h3 { font-size:26px; line-height:1.55; margin:10px 0 7px }
+p { margin:10px 0 }
+.sidebar { position:fixed; inset:0 auto 0 0; width:240px; background:var(--sidebar); border-right:1px solid var(--line); padding:32px 24px 26px; display:flex; flex-direction:column; overflow-y:auto; z-index:3 }
+.brand { font:600 32px/1.2 var(--sans); letter-spacing:-.9px; text-decoration:none; color:var(--ink); white-space:nowrap }
+.brand span { color:inherit }
+.brand-subtitle { font:15px/1.6 var(--kai); margin:10px 0 38px; color:var(--muted) }
+nav { display:flex; flex-direction:column; gap:7px; font-family:var(--sans) }
+nav a { padding:10px 0; color:var(--body); text-decoration:none; font-size:15px }
+nav a:hover { color:var(--accent); text-decoration:underline }
+nav a[aria-current=page] { color:var(--accent); font-weight:600; text-decoration:underline; text-underline-offset:7px }
+.nav-label { border-top:1px solid var(--line); padding:24px 0 6px; margin-top:18px; color:var(--muted); font-size:13px; letter-spacing:.08em }
+.theme-switch { display:flex; padding:12px 0 0; border-top:1px solid var(--line); margin-top:auto; gap:6px; flex-shrink:0 }
+.theme-switch button { border:0; border-bottom:2px solid transparent; border-radius:0; flex:1; background:transparent; color:var(--muted); font-size:14px; padding:6px 0 }
+.theme-switch button[aria-pressed=true] { border-bottom-color:var(--accent); color:var(--accent); font-weight:600 }
+main { margin-left:240px; padding:40px 28px 38px; width:calc(100% - 240px); max-width:960px; min-height:100dvh }
+@media(min-width:1200px) { main { margin-left:calc(240px + (100vw - 240px - 960px)/2) } }
+.edition-heading p { font:14px/1.6 var(--sans); color:var(--muted); margin:8px 0 26px }
+.draft-tag { display:inline; color:var(--active); margin-left:16px; font-size:14px }
+.reading-tools { display:flex; align-items:center; justify-content:space-between; gap:24px; margin:0 0 24px; flex-wrap:wrap }
+.topic-tabs { display:flex; gap:16px; flex-wrap:wrap }
+.topic-tabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; color:var(--body); padding:7px 0; white-space:nowrap; font-size:14px }
+.topic-tabs button[aria-pressed=true] { border-bottom-color:var(--accent); color:var(--accent); font-weight:600 }
+.search { margin:0; flex:1; min-width:230px; max-width:280px }
+.search input { border:0; border-bottom:1px solid var(--control-line); border-radius:0; background:transparent; font-size:14px; padding:8px 0; min-height:38px; width:100% }
+.reading-map { border-top:2px solid var(--rule); border-bottom:1px solid var(--line); padding:14px 0; margin:0 0 34px }
+.reading-map summary { cursor:pointer; font:500 18px/1.6 var(--kai); color:var(--ink) }
+.reading-map summary span { font:14px/1.6 var(--sans); color:var(--muted); margin-left:10px }
+.reading-map ol { margin:18px 0 8px; padding-left:24px; display:grid; gap:10px; font-size:15px }
+.reading-map a { text-decoration:none; color:var(--body); line-height:1.7 }
+.reading-map a:hover { color:var(--accent); text-decoration:underline }
+.section-heading { display:flex; align-items:baseline; gap:14px; margin:34px 0 8px }
+.section-heading>span { font:14px/1.5 var(--sans); color:var(--muted) }
+.paper { position:relative; display:grid; grid-template-columns:46px minmax(0,1fr); column-gap:22px; padding:26px 0 30px; margin:0; border-bottom:1px solid var(--line); scroll-margin-top:26px }
+.paper-date { padding-top:2px; font:14px/1.6 var(--sans); font-variant-numeric:tabular-nums; color:var(--muted) }
+.paper-card { min-width:0; background:transparent; padding:0; border:0 }
+.paper-meta { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; font:14px/1.65 var(--sans) }
+.journal { font-weight:600; color:var(--accent); font-size:15px }
+.topic-label { font:13px/1.65 var(--sans); color:var(--muted); border-left:1px solid var(--line); padding-left:12px }
+.topic-label:empty { display:none }
+.paper h3 a { color:var(--ink); text-decoration:none }
+.paper h3 a:hover { color:var(--accent); text-decoration:underline }
+.original-title { font:16px/1.65 var(--sans); color:var(--muted); max-width:78ch; margin:5px 0 16px }
+.summary { font:400 19px/1.85 var(--kai); color:var(--body); margin:14px 0 18px; max-width:72ch }
+.paper-foot { display:flex; align-items:baseline; gap:24px; margin-top:18px; font:14px/1.7 var(--sans) }
+.recommendation { flex:1; min-width:0; color:var(--muted) }
+.recommendation summary { width:fit-content; cursor:pointer; color:var(--muted); font:14px/1.7 var(--sans) }
+.recommendation[open] summary { color:var(--accent) }
+.recommendation p { font:400 17px/1.85 var(--kai); max-width:72ch; margin:12px 0 4px }
+.read-link { margin-left:auto; white-space:nowrap; font-size:14px; text-decoration:none }
+.read-link:hover { text-decoration:underline }
+.read-link span { font-size:18px; margin-left:4px }
+.compact-paper { display:block; padding:22px 0 }
+.compact-paper .paper-date { display:none }
+.compact-paper .paper-card { display:grid; grid-template-columns:minmax(0,1fr) 190px; gap:7px 24px }
+.compact-paper h3 { grid-column:1; grid-row:1; font-size:23px; margin:0 }
+.compact-paper .paper-meta { grid-column:2; grid-row:1; font-size:14px }
+.compact-paper .topic-label { border:0; padding:0 }
+.compact-paper .original-title { grid-column:1; margin:2px 0; font-size:15px }
+.compact-paper .paper-foot { grid-column:2; margin:0 }
+.related-section { margin-top:44px }
+.empty { padding:24px 0; border-top:1px solid var(--line); color:var(--muted); font:18px/1.8 var(--kai) }
+.muted { font:14px/1.6 var(--sans); color:var(--muted) }
+#search-count:empty { display:none }
+footer { display:flex; justify-content:space-between; gap:18px; border-top:1px solid var(--line); margin-top:44px; padding-top:18px; font:13px/1.7 var(--sans); color:var(--muted) }
+/* Editing controls retain native affordances; prose shares the reading type system. */
+input,select,textarea { border:1px solid var(--control-line); border-radius:2px; background:var(--bg); width:100%; padding:10px 12px }
+input,select { font-family:var(--sans) }
+input::placeholder { color:var(--muted) }
+label { display:block; margin:12px 0; font:15px/1.75 var(--sans) }
+textarea { resize:vertical; font:18px/1.8 var(--kai) }
+button,.button { border:1px solid var(--control-line); border-radius:2px; background:transparent; color:var(--body); padding:9px 14px; font:15px/1.5 var(--sans); white-space:nowrap; text-decoration:none; display:inline-block }
+button:hover,.button:hover { color:var(--accent); border-color:var(--accent) }
+.secondary { color:var(--muted) }
+.notice { padding:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); font:17px/1.85 var(--kai); color:var(--body) }
+.lead { font:20px/1.7 var(--kai); color:var(--body); margin:4px 0 28px }
+.workspace-heading { display:flex; justify-content:space-between; align-items:start; gap:22px }
+.workspace-heading p { font:16px/1.75 var(--sans); color:var(--muted); margin:0 0 28px }
+.queue-summary { display:grid; grid-template-columns:repeat(3,1fr); margin:0 0 28px; border-top:1px solid var(--rule); border-bottom:1px solid var(--line) }
+.queue-summary a { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; text-decoration:none; color:var(--body); font-size:14px }
+.queue-summary a+a { border-left:1px solid var(--line) }
+.queue-summary strong { font:500 36px/1.3 var(--kai); color:var(--ink); font-variant-numeric:tabular-nums }
+.cohort-nav { display:flex; gap:24px; border-bottom:1px solid var(--line); margin-bottom:16px; overflow:auto; font-family:var(--sans) }
+.cohort-nav a { white-space:nowrap; padding:10px 0; text-decoration:none; font-size:14px; color:var(--muted) }
+.cohort-nav a[aria-current] { color:var(--accent); border-bottom:2px solid var(--accent) }
+.filters { display:flex; flex-wrap:wrap; gap:8px 18px; margin:14px 0 22px; font-family:var(--sans) }
+.filters a { font-size:14px; padding:5px 0; border-bottom:2px solid transparent; text-decoration:none; color:var(--muted) }
+.filters a[aria-current] { border-bottom-color:var(--accent); color:var(--accent) }
+.admin main { max-width:1100px }
+.admin .paper { display:block; padding:25px 0 }
+.admin .paper h3 { font-size:25px }
+.admin .paper-meta { justify-content:space-between }
+.admin .summary { font-size:18px }
+.decision { font:14px/1.6 var(--sans); color:var(--active) }
+.review-action { display:flex; justify-content:space-between; align-items:center; gap:20px; font-size:14px; margin-top:14px }
+.review-grid { display:grid; grid-template-columns:1.05fr 1fr; gap:32px }
+.review-grid>section { padding:22px 0; border-top:1px solid var(--rule); min-width:0 }
+.review-grid h2 { margin:0 0 18px; font-size:25px }
+.article-title { font-size:32px; max-width:100%; line-height:1.5 }
+.eyebrow { font:14px/1.7 var(--sans); color:var(--muted); margin-bottom:14px }
+.abstract { font:17px/1.9 var(--sans); white-space:pre-wrap }
+blockquote { margin:20px 0; padding-left:16px; border-left:1px solid var(--line); font:16px/1.85 var(--sans); color:var(--muted); white-space:pre-wrap }
+fieldset { border:1px solid var(--line); padding:12px 16px; margin:20px 0 }
+legend { font-size:15px }
+.check { display:flex; gap:10px; align-items:center; font-size:15px }
+.check input { width:18px; height:18px; flex-shrink:0 }
+.actions { display:flex; gap:8px; flex-wrap:wrap }
+.pagination { font-size:14px; padding-top:20px }
+.table-wrap { overflow:auto }
+table { border-collapse:collapse; width:100%; font:14px/1.7 var(--sans); border-top:1px solid var(--rule); border-bottom:1px solid var(--rule) }
+caption { text-align:left; padding:12px 0; font-weight:600 }
+th,td { border-bottom:1px solid var(--line); padding:11px 14px; text-align:left }
+tbody th { font-weight:400 }
+pre { font:14px/1.7 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; background:var(--surface); padding:12px; border-radius:3px }
+.journal-list { columns:2; column-gap:38px; font-size:16px }
+.journal-list li { break-inside:avoid; padding:6px 0 }
+.issue-link { font:24px/1.6 var(--kai); padding:12px 0 }
+.skip { position:absolute; top:-100px; left:12px; background:var(--bg); padding:8px }
+.skip:focus { top:0; z-index:10 }
+.sr-only { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap }
+:focus-visible { outline:2px solid var(--focus); outline-offset:4px }
+[hidden] { display:none!important }
+@media(min-width:1340px) { .admin main { margin-left:calc(240px + (100vw - 240px - 1100px)/2) } }
+@media(min-width:1200px) and (max-width:1339px) { .admin main { margin-left:240px } }
+@media(max-width:1100px) {
+  .reading-tools .search { max-width:none; flex-basis:100% }
+  .review-grid { grid-template-columns:1fr }
+  .queue-summary a { padding:14px }
+}
+@media(max-width:700px) {
+  .sidebar { position:static; width:auto; padding:22px 18px 12px; border:0; border-bottom:1px solid var(--line); display:block; overflow:visible }
+  .brand { font-size:26px }
+  .brand-subtitle { margin:6px 0 12px; font-size:16px }
+  .sidebar nav { flex-direction:row; gap:18px; overflow:auto; scrollbar-width:none }
+  .sidebar nav::-webkit-scrollbar { display:none }
+  .sidebar nav a { white-space:nowrap; padding:10px 0; min-height:44px; font-size:14px }
+  .sidebar .nav-label { display:none }
+  .theme-switch { position:absolute; right:16px; top:18px; width:140px; border:0; padding:0; margin:0 }
+  .theme-switch button { font-size:13px; padding:5px 0; min-height:44px }
+  main,.admin main { margin:0; width:100%; padding:28px 20px; max-width:none; min-height:70vh }
+  h1 { font-size:36px }
+  .reading-tools { margin-bottom:24px; gap:14px }
+  .topic-tabs { gap:10px 18px }
+  .topic-tabs button { font-size:14px; min-height:44px }
+  input,select,textarea,.search input { font-size:18px }
+  .search input { min-height:44px }
+  .reading-map { margin-bottom:28px }
+  .paper { display:block; padding:24px 0 28px }
+  .paper-date { display:block; margin:0 0 7px; padding:0; font-size:13px }
+  .paper h3 { font-size:26px; line-height:1.5 }
+  .paper-meta { gap:6px 10px; font-size:14px }
+  .topic-label { font-size:11px; border:0; padding:0; flex-basis:100% }
+  .original-title { font-size:15px; line-height:1.65 }
+  .summary { font-size:19px; line-height:1.85 }
+  .paper-foot { flex-wrap:wrap; gap:12px }
+  .recommendation { flex-basis:100% }
+  .recommendation p { font-size:18px }
+  .recommendation summary { min-height:44px; padding:10px 0 }
+  .read-link { margin-left:0; min-height:44px; padding:10px 0 }
+  .section-heading { margin-top:28px }
+  .section-heading h2 { font-size:25px }
+  .compact-paper .paper-card { display:flex; flex-direction:column; gap:6px }
+  .compact-paper .paper-meta { order:0 }
+  .compact-paper h3 { order:1; font-size:24px }
+  .compact-paper .original-title { order:2 }
+  .compact-paper .paper-foot { order:3 }
+  .compact-paper .topic-label { display:none }
+  footer { flex-wrap:wrap; gap:8px; font-size:11px }
+  .workspace-heading { flex-wrap:wrap; gap:0 }
+  .workspace-heading .button { margin-bottom:20px }
+  .queue-summary a { display:block; padding:12px 8px; font-size:11px }
+  .queue-summary strong { display:block; font-size:32px; margin-top:4px }
+  .cohort-nav { gap:20px }
+  .admin .paper { padding:22px 0 }
+  .review-grid>section { padding:18px 0 }
+  .article-title { font-size:28px }
+  .journal-list { columns:1 }
+}
+@media(max-width:380px) { .sidebar .brand { font-size:24px } .theme-switch { width:118px } .theme-switch button { font-size:11px } }
+@media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto } }
+@media print {
+  :root,:root[data-theme=dark] { --bg:#fff; --ink:#1a1816; --body:#2e2b27; --muted:#5e5950; --line:#dcd3c3; --rule:#1a1816; --accent:#b04a24 }
+  .sidebar,.reading-tools,.reading-map,footer { display:none }
+  main,.admin main { margin:0; padding:0; width:100%; max-width:none }
+  .paper { break-inside:avoid }
+  .recommendation { display:none }
+}
+
+/* Tabler side-panel control: a quiet icon in the masthead, 44px hit area. */
+:root { --nav-width:240px; --content-width:960px }
+.admin { --content-width:1100px }
+.nav-toggle { position:fixed; top:27px; left:180px; z-index:5; display:grid; place-items:center; width:44px; height:44px; padding:0; border:1px solid transparent; border-radius:8px; color:var(--muted); background:transparent; transition:background-color .15s,color .15s,border-color .15s }
+.nav-toggle:hover { background:var(--surface); color:var(--ink); border-color:var(--line) }
+.nav-toggle:focus-visible { background:var(--surface); color:var(--ink) }
+.nav-toggle::after { content:attr(data-tooltip); position:absolute; top:calc(100% + 8px); left:50%; transform:translateX(-50%); background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:4px; padding:5px 9px; font:13px/1.5 var(--sans); white-space:nowrap; pointer-events:none; opacity:0 }
+.nav-toggle:hover::after,.nav-toggle:focus-visible::after { opacity:1 }
+.nav-expand-icon { display:none }
+.compact-masthead { display:none }
+html[data-nav-collapsed=true] { --nav-width:64px }
+html[data-nav-collapsed=true] .sidebar { display:none }
+html[data-nav-collapsed=true] .nav-toggle { left:10px }
+html[data-nav-collapsed=true] .nav-toggle::after { left:0; transform:none }
+html[data-nav-collapsed=true] .nav-collapse-icon { display:none }
+html[data-nav-collapsed=true] .nav-expand-icon { display:block }
+@media(min-width:701px) {
+  main,.admin main { width:calc(100% - var(--nav-width)); max-width:var(--content-width); margin-left:max(var(--nav-width),calc(var(--nav-width) + (100% - var(--nav-width) - var(--content-width))/2)); padding-top:40px }
+  html[data-nav-collapsed=true] body::before { content:""; position:fixed; inset:0 auto 0 0; width:64px; background:var(--sidebar); border-right:1px solid var(--line) }
+}
+.review-note { font:15px/1.75 var(--sans); color:var(--muted); margin:0 0 24px }
+@media(max-width:700px) {
+  .nav-toggle,html[data-nav-collapsed=true] .nav-toggle { position:absolute; left:auto; right:14px; top:16px }
+  .nav-toggle::after,html[data-nav-collapsed=true] .nav-toggle::after { left:auto; right:0; transform:none }
+  html[data-nav-collapsed=true] .compact-masthead { display:flex; align-items:center; height:76px; padding:0 20px; background:var(--sidebar); border-bottom:1px solid var(--line) }
+  html[data-nav-collapsed=true] main { margin:0; width:100%; padding-top:28px }
+  .sidebar .brand { font-size:30px }
+  .brand-subtitle { margin-bottom:14px }
+  .theme-switch { position:static; width:210px; margin:12px 0 0; padding:0 }
+  .sidebar nav { margin-top:18px }
+  .sidebar nav a { font-size:15px }
+  .theme-switch button { font-size:14px }
+  .paper h3 { font-size:25px }
+  .summary { font-size:19px }
+  .original-title { font-size:15px }
+  .topic-label { font-size:13px }
+  .search { min-width:0; width:100% }
+}
+@media(prefers-reduced-motion:reduce) { .nav-toggle { transition:none } }
+@media print { .nav-toggle,.compact-masthead,html[data-nav-collapsed=true] body::before { display:none } main,.admin main,html[data-nav-collapsed=true] main { margin:0; width:100%; padding:0; max-width:none } }

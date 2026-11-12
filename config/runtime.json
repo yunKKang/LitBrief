@@ -1,0 +1,11 @@
+{
+  "issue_anchor": "2026-11-11",
+  "issue_days": 4,
+  "publication_mode": "manual",
+  "lookback_days": 14,
+  "storage_warning_gb": 10,
+  "ai_max_concurrency": 5,
+  "ai_workers": 1,
+  "publisher_max_concurrency": 1,
+  "request_interval_seconds": 2
+}
