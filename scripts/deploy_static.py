@@ -38,6 +38,8 @@ def package(container):
                 raise ValueError('Release changed during packaging')
             archive.writestr(name, body)
         archive.writestr('manifest.json', json.dumps(manifest))
+        if latest.get('provenance'):
+            archive.writestr('build.json',json.dumps({**latest['provenance'],'issues':latest['issues']}))
     payload = buffer.getvalue()
     unpack(payload)  # Reject private files before sending anything to the server.
     return folder.name, payload
@@ -65,7 +67,7 @@ def main():
     command = ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=15']
     if args.identity:
         command += ['-i', str(args.identity)]
-    command += [args.host, 'python3 /usr/local/lib/litbrief/activate_release.py ' + release_id +
+    command += [args.host, 'sudo -n -u litbrief python3 /usr/local/lib/litbrief/activate_release.py ' + release_id +
                 (' --rollback' if args.rollback else '')]
     try:
         result = subprocess.run(command, input=payload or b'', capture_output=True, check=True, timeout=120)

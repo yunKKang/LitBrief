@@ -1,0 +1,9 @@
+[Unit]
+Description=LitBrief previous-month supplement on first Sunday
+
+[Timer]
+OnCalendar=Sun *-*-01..07 18:00:00 Asia/Shanghai
+Persistent=true
+
+[Install]
+WantedBy=timers.target

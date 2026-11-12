@@ -18,14 +18,14 @@ def stage(row):
     return 'type' if row['state'] == 'type_excluded' else 'title' if result.get('title_screened') else 'abstract'
 
 
-def prepare(db, mode, seed, count=12, targeted=(), only_ids=None):
+def prepare(db, mode, seed, count=12, targeted=(), only_ids=None, cohort='monitoring'):
     if mode not in {'audit', 'verify'} or not seed or not 1 <= count <= 50 or len(targeted) > 5:
         raise ValueError('Invalid quality batch limits')
     active = registry()
     states = ('ai_excluded', 'type_excluded') if mode == 'audit' else ('awaiting_review', 'approved')
     with db:
         db.execute('BEGIN IMMEDIATE')
-        rows = [dict(r) for r in db.execute("SELECT * FROM papers WHERE cohort='monitoring' ORDER BY id")
+        rows = [dict(r) for r in db.execute("SELECT * FROM papers WHERE cohort=? ORDER BY id",(cohort,))
                 if r['state'] in states and r['journal'] in active and r['human_decision'] != 'reject']
         if only_ids is not None:
             rows=[r for r in rows if r['id'] in only_ids]

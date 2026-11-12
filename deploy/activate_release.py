@@ -13,7 +13,7 @@ import sys
 import zipfile
 
 
-PUBLIC_PATH = re.compile(r'(?:index\.html|archive\.html|about\.html|style\.css|tabler-icons-LICENSE\.txt|issues/\d{4}-\d{2}-\d{2}\.html|papers/\d+\.html|fonts/(?:[\w-]+\.woff2|fonts\.css|OFL\.txt))\Z')
+PUBLIC_PATH = re.compile(r'(?:index\.html|archive\.html|about\.html|style\.css|tabler-icons-LICENSE\.txt|issues/\d{4}-\d{2}-(?:\d{2}|monthly)\.html|papers/\d+\.html|fonts/(?:[\w-]+\.woff2|fonts\.css|OFL\.txt))\Z')
 RELEASE_ID = re.compile(r'[a-f0-9]{32}\Z')
 
 
@@ -22,12 +22,12 @@ def unpack(data):
         names = archive.namelist()
         if len(names) != len(set(names)) or 'manifest.json' not in names:
             raise ValueError('Duplicate paths or missing manifest')
-        if any(n != 'manifest.json' and not PUBLIC_PATH.fullmatch(n) for n in names):
+        if any(n not in {'manifest.json','build.json'} and not PUBLIC_PATH.fullmatch(n) for n in names):
             raise ValueError('Non-public path in archive')
         if sum(i.file_size for i in archive.infolist()) > 100 * 1024**2:
             raise ValueError('Release exceeds 100 MiB')
         manifest = json.loads(archive.read('manifest.json'))
-        if set(manifest) != set(names) - {'manifest.json'}:
+        if set(manifest) != set(names) - {'manifest.json','build.json'}:
             raise ValueError('Manifest file set mismatch')
         required = {'index.html', 'archive.html', 'about.html', 'style.css', 'fonts/fonts.css', 'fonts/OFL.txt'}
         if not required <= set(manifest):
@@ -62,6 +62,7 @@ def activate(base, release_id, data=None):
             if path.is_symlink():
                 raise ValueError('Unsafe deployment directory')
             path.mkdir(exist_ok=True)
+            if name=='releases':path.chmod(0o755)
         release = base / 'releases' / release_id
         manifest_path = base / 'manifests' / (release_id + '.json')
         if data is not None:
@@ -70,13 +71,19 @@ def activate(base, release_id, data=None):
                 verify(release, manifest)  # Retry is safe only for identical content.
             else:
                 release.mkdir(mode=0o755)
+                release.chmod(0o755)
                 for name, body in files.items():
                     dest = release / name
                     dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.parent.chmod(0o755)
                     dest.write_bytes(body)
                     dest.chmod(0o644)
                 verify(release, manifest)
             manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding='utf-8')
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                if 'build.json' in archive.namelist():
+                    build=json.loads(archive.read('build.json'))
+                    (base/'manifests'/(release_id+'.build.json')).write_text(json.dumps(build),encoding='utf-8')
         else:
             manifest = json.loads(manifest_path.read_text('utf-8'))
             verify(release, manifest)

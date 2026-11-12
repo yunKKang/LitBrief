@@ -74,7 +74,7 @@ def archive_index(issues):
         f'<option value="{h(month)}">{h(month)}</option>' for month in months)
     body += f'''<div class="archive-tools"><label>按月份<select id="archive-month">{options}</select></label><label>查找期次<input id="archive-search" type="search" placeholder="输入日期，如 2026-11"></label></div><p id="archive-count" class="muted" aria-live="polite">共 {len(issues)} 期</p><div class="issue-directory">'''
     for issue in issues:
-        label = f'{issue["id"]} 至 {issue["end_date"]}'
+        label = f'{issue["id"][:7]} 月度补充' if issue['id'].endswith('-monthly') else f'{issue["id"]} 至 {issue["end_date"]}'
         body += f'''<a class="issue-entry" data-month="{h(issue['id'][:7])}" href="issues/{h(issue['id'])}.html"><span class="issue-range">{h(label)}</span><span class="issue-meta">{issue['count']} 篇 <span aria-hidden="true">↗</span></span></a>'''
     body += '''</div><p id="archive-empty" class="empty" hidden>没有符合条件的期次。</p><script>
 document.addEventListener('DOMContentLoaded',()=>{
@@ -106,6 +106,7 @@ def card(item,prefix='',detail=False,featured=False,preview=False):
     external=f'<a class="read-link" href="{h(url)}" target="_blank" rel="noopener noreferrer">阅读原文 <span aria-hidden="true">›</span></a>' if url else ''
     day=publication_day(item)
     stamp=day[5:].replace('-','.') if day else '日期待核'
+    if item.get('late_arrival'):stamp+=' · 补录'
     date_attr=f' datetime="{h(day)}" title="{h(day)}"' if day else ''
     return f'''<article id="paper-{item['id']}" class="paper {'compact-paper' if compact else ''}" data-topics="{h(' '.join(tags))}"><time class="paper-date"{date_attr}>{h(stamp)}</time><div class="paper-card"><div class="paper-meta"><span class="journal">{h(item['journal'])}</span><span class="topic-label">{h(' · '.join(tags))}</span></div><h3>{title_html}</h3>{original}{summary}<div class="paper-foot">{reason}{external}</div></div></article>'''
 

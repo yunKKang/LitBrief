@@ -16,12 +16,13 @@ def exclusion(paper):
     if TITLE_PREFIX.match(paper.get('title','')):return '标题明确标识为更正或撤稿通知，保留记录供原文更新核对。'
     return None
 
-def run(db,cohort='monitoring'):
+def run(db,cohort='monitoring',ids=None):
     count=0
     with db:
         db.execute('BEGIN IMMEDIATE')
         rows=db.execute("SELECT * FROM papers WHERE cohort=? AND human_decision='' AND state IN ('pending','awaiting_abstract')",(cohort,)).fetchall()
         for r in rows:
+            if ids is not None and r['id'] not in ids:continue
             reason=exclusion(json.loads(r['data']))
             if not reason:continue
             result={'decision':'exclude','reason':reason,'basis':'出版社类型／明确通知标题','summary':'','evidence':[], 'prefilter':'article-type-v1'}

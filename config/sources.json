@@ -12,7 +12,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Science",
@@ -27,7 +28,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Candidate publisher endpoint; acceptance requires parsed scholarly items and identity check, not HTTP 200 alone."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Proceedings of the National Academy of Sciences of the United States of America",
@@ -42,7 +44,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Candidate publisher endpoint; acceptance requires parsed scholarly items and identity check, not HTTP 200 alone."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Communications",
@@ -57,7 +60,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Science Advances",
@@ -72,7 +76,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Candidate publisher endpoint; acceptance requires parsed scholarly items and identity check, not HTTP 200 alone."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Sustainability",
@@ -87,7 +92,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Energy",
@@ -102,7 +108,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Climate Change",
@@ -117,7 +124,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Cities",
@@ -132,7 +140,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Water",
@@ -147,7 +156,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "One Earth",
@@ -164,7 +174,8 @@
       }
     ],
     "crossref_query_issn": "2590-3322",
-    "identity_note": "The CAS seed 2590-3330 returned Crossref journal HTTP 404. Crossref 2590-3322 returns One Earth and matches the ScienceDirect publisher feed; keep original seed for traceability."
+    "identity_note": "The CAS seed 2590-3330 returned Crossref journal HTTP 404. Crossref 2590-3322 returns One Earth and matches the ScienceDirect publisher feed; keep original seed for traceability.",
+    "screening_cycle": "weekly"
   },
   {
     "title": "Environmental Science & Ecotechnology",
@@ -179,7 +190,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Renewable and Sustainable Energy Reviews",
@@ -194,7 +206,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Earth's Future",
@@ -209,7 +222,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Candidate publisher endpoint; acceptance requires parsed scholarly items and identity check, not HTTP 200 alone."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Geoscience",
@@ -224,7 +238,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Reviews Earth & Environment",
@@ -239,7 +254,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Reviews Clean Technology",
@@ -254,7 +270,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Nature RSS pattern; endpoint availability and returned feed title are checked in audit."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Environmental Science & Technology",
@@ -277,7 +294,8 @@
         "discovery_note": "Official https://pubs.acs.org/pages/rss links after platform migration; rolling feed is not full-window coverage.",
         "expected_feed_title": "Environmental Science & Technology Current Issue"
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Global Environmental Change",
@@ -292,7 +310,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Energy Economics",
@@ -307,7 +326,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Communications Earth & Environment",
@@ -322,7 +342,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Added explicitly by user during source audit on 2026-11-11; verify publisher feed and full article catalogue."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Food",
@@ -337,7 +358,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Explicitly added by user on 2026-11-11; publisher catalogue is primary for discovery."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Nature Health",
@@ -352,7 +374,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Explicitly added by user on 2026-11-11; publisher catalogue is primary for discovery."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "The Lancet Planetary Health",
@@ -367,7 +390,8 @@
         "role": "latest-item cross-check",
         "discovery_note": "Explicitly added by user on 2026-11-11; verify latest online articles separately from issue dates."
       }
-    ]
+    ],
+    "screening_cycle": "weekly"
   },
   {
     "title": "Resources, Conservation and Recycling",
@@ -383,7 +407,8 @@
         "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
       }
     ],
-    "trial_note": "User restored this source for trial on 2026-11-11; consider lower priority if processing burden outweighs reading value. No automatic truncation or schedule change."
+    "trial_note": "User restored this source for trial on 2026-11-11; consider lower priority if processing burden outweighs reading value. No automatic truncation or schedule change.",
+    "screening_cycle": "weekly"
   },
   {
     "title": "Applied Energy",
@@ -399,7 +424,8 @@
         "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
       }
     ],
-    "trial_note": "User restored this source for trial on 2026-11-11; consider lower priority if processing burden outweighs reading value. No automatic truncation or schedule change."
+    "trial_note": "User restored this source for trial on 2026-11-11; consider lower priority if processing burden outweighs reading value. No automatic truncation or schedule change.",
+    "screening_cycle": "monthly"
   },
   {
     "title": "Building and Environment",
@@ -415,6 +441,7 @@
         "discovery_note": "ScienceDirect publication RSS keyed by ISSN; feed identity must match journal. Covers latest records, not a full historical inventory."
       }
     ],
-    "trial_note": "User restored this source for trial on 2026-11-11; consider lower priority if processing burden outweighs reading value. No automatic truncation or schedule change."
+    "trial_note": "User restored this source for trial on 2026-11-11; consider lower priority if processing burden outweighs reading value. No automatic truncation or schedule change.",
+    "screening_cycle": "monthly"
   }
 ]

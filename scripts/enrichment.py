@@ -64,7 +64,7 @@ def fetch_material(http, provider, url, identifier):
         result['status'] = 'record_not_found'
     elif not meta.get('ok'):
         result['status'] = 'request_failed'
-    elif any(signal in body[:100000].lower() for signal in (b'verify you are human', b'just a moment...', b'are you a robot?')):
+    elif any(signal in body[:100000].lower() for signal in (b'verify you are human', b'just a moment...', b'are you a robot?', b'<title>client challenge</title>')):
         result['status'] = 'access_blocked'
     else:
         result.update(parse_material(provider, body, identifier))
@@ -120,7 +120,7 @@ def input_digest(paper):
     return hashlib.sha256(json.dumps(material, ensure_ascii=False).encode()).hexdigest()
 
 
-def run(db, max_items, *, http=None, clock=None):
+def run(db, max_items, *, http=None, clock=None, cohort='monitoring', ids=None):
     if max_items < 1:
         raise ValueError('max-items must be positive')
     clock = clock or datetime.now(timezone.utc)
@@ -132,7 +132,8 @@ def run(db, max_items, *, http=None, clock=None):
     with worker_lock(DATA):
         held_providers = {r['provider']: dict(r) for r in db.execute('SELECT * FROM enrichment_holds')
                           if not r['retry_at'] or datetime.fromisoformat(r['retry_at']) > clock}
-        rows = db.execute("SELECT * FROM papers WHERE state='awaiting_abstract' AND cohort='monitoring' ORDER BY id").fetchall()
+        rows = db.execute("SELECT * FROM papers WHERE state='awaiting_abstract' AND cohort=? ORDER BY id",(cohort,)).fetchall()
+        if ids is not None:rows=[r for r in rows if r['id'] in ids]
         for row in rows:
             if attempted >= max_items:
                 break

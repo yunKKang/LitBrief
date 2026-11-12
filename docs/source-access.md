@@ -117,3 +117,11 @@ Elsevier 官方文档说明：API key 标识应用，**本身不授予内容权�
 报告已读取并与当前实现比对；旧30刊诊断继续作为历史证据，当前27刊。Elsevier Abstract/Article Retrieval META_ABS、Institutional Token及第三方处理条件已从官方文档核对。Springer产品页支持摘要字段和Basic计划，但未证明Nature13刊覆盖。Europe PMC代码此前已经使用core，本轮对剩余3个DOI重新串行查询：均HTTP200、没有精确记录；不能推断原文无摘要。
 
 新增publisher_probe.py用于单DOI、单次请求的权限/字段校验，不自动入库、不存摘要、不送AI。凭证接口缺key，尚未实测；官方机制存在不能标为项目已解决。申请步骤与具体条件见 [API访问指南](publisher-api-access.md)，生产收敛方案见 [架构复查](architecture.md)。授权后先验明一篇，再逐刊验证最新/已知摘要样本和目录差集，最后在目标服务器验收。公共原始响应与本机浏览器证据仍留在outputs，不能提交公开库。
+
+## 2026-11-12 Ubuntu服务器实测
+
+现有2核2GB服务器串行获取多数样本在1秒左右，Europe PMC样本约1–3秒；模型/models鉴权200且配置模型在列表，无生成费用。约10MB私有迁移包校验传输约11秒，RSS采集观测内存约66MB。带宽不是当前主要阻塞。
+
+真实RSS扫描27刊，21刊可解析、共828条；缺口为Nature Communications、Nature Cities、Nature Reviews Clean Technology、ES&T、Nature Food、Nature Health。一次feed成功不等于历史或未来完整覆盖。Nature正文返回200但标题为Client Challenge、无摘要区；已纳入访问受阻识别。OpenAlex对一篇期刊DOI返回了不同的预印本DOI，现有精确DOI检查拒收；不能拿错误材料补洞。Crossref样本含正式摘要，可作补充，不作为最新发现的唯一依赖。
+
+一次真实导入因旧库同PII的DOI记录和已AI排除的URL-only记录冲突而中断。当前已改为隔离并继续，其旧判断不自动丢弃；完全未处理的确切PII重复可安全归并。来源身份冲突是独立状态，不属于“无文献”。

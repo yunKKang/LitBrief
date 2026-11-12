@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from library import (DATA, ROOT, TOPICS, now, today, registry, period, publication_day,
-                     worker_lock, unresolved_ai, build_issue)
+                     worker_lock, unresolved_ai, build_issue, artifact_path, source_cycle, issue_window, identity_conflicts)
 from quality import policy
 
 AI_CACHE = ROOT / 'outputs/ai-trial'
@@ -20,18 +20,20 @@ def policy_hash():
     return hashlib.sha256(policy().encode()).hexdigest()
 
 
-def admission(db, row, day=None, issue_end=None):
+def admission(db, row, day=None, issue_end=None, *, cohort='monitoring', kind='weekly'):
     """Return a reasoned decision for exactly this record; never mutate it."""
     day = day or today()
     data, result = json.loads(row['data']), json.loads(row['result'] or '{}')
     def no(reason): return {'eligible':False,'reason':reason,'paper_id':row['id']}
-    if row['cohort']!='monitoring' or row['journal'] not in registry(): return no('inactive_or_outside_monitoring')
+    if row['cohort']!=cohort or row['journal'] not in registry(): return no('inactive_or_outside_monitoring')
+    if source_cycle(row['journal'])!=kind:return no('different_publication_cycle')
     if row['human_decision']=='reject': return no('human_exclusion')
     if row['state'] not in {'awaiting_review','approved'}: return no('not_final_candidate')
     if row['material_changed']: return no('material_changed')
     from prefilter import exclusion
     if exclusion(data): return no('excluded_article_type')
     if unresolved_ai(db,row['id']): return no('unresolved_request')
+    if identity_conflicts(db,row['id']):return no('identity_conflict')
     pub_day = publication_day(data)
     if not pub_day or pub_day>day.isoformat(): return no('publication_date_unverified')
     if not data.get('abstract') or not data.get('abstract_source'): return no('missing_abstract')
@@ -90,16 +92,17 @@ def admission(db, row, day=None, issue_end=None):
     return no('verification_missing_or_stale')
 
 
-def inspect(db, day=None, issue_end=None):
-    return [admission(db,r,day,issue_end) for r in db.execute("SELECT * FROM papers WHERE cohort='monitoring' AND state IN ('awaiting_review','approved','needs_review') AND id NOT IN (SELECT paper_id FROM issue_items JOIN issues ON issues.id=issue_id WHERE issues.state='published') ORDER BY id")]
+def inspect(db, day=None, issue_end=None, *, cohort='monitoring', kind='weekly', ids=None):
+    return [admission(db,r,day,issue_end,cohort=cohort,kind=kind) for r in db.execute("SELECT * FROM papers WHERE cohort=? AND state IN ('awaiting_review','approved','needs_review') AND id NOT IN (SELECT paper_id FROM issue_items JOIN issues ON issues.id=issue_id WHERE issues.state='published') ORDER BY id",(cohort,)) if ids is None or r['id'] in ids]
 
 
-def admit(db, day=None, issue_end=None):
+def admit(db, day=None, issue_end=None, *, cohort='monitoring', kind='weekly', ids=None):
     accepted=[]
     with db:
         db.execute('BEGIN IMMEDIATE')
         for row in db.execute("SELECT * FROM papers WHERE state IN ('awaiting_review','approved') AND id NOT IN (SELECT paper_id FROM issue_items JOIN issues ON issues.id=issue_id WHERE issues.state='published') ORDER BY id").fetchall():
-            gate=admission(db,row,day,issue_end)
+            if ids is not None and row['id'] not in ids:continue
+            gate=admission(db,row,day,issue_end,cohort=cohort,kind=kind)
             if not gate['eligible']: continue
             if row['state']!='approved':
                 result=json.loads(row['result'])
@@ -135,40 +138,43 @@ def export_confirmed(db, output):
     return {'state':'exported','issue_id':published[-1],'public_directory':str(export_site(db,output))}
 
 
-def publish_ready(db, day, output):
+def publish_ready(db, day, output, *, window=None, cohort='monitoring', kind='weekly', ids=None):
     """Local snapshot publication only; called after the cycle's explicit mode gate."""
-    window=closed_period(day)
+    window=window or (closed_period(day) if kind=='weekly' else issue_window(day.replace(day=1)-timedelta(days=1),'monthly'))
     if not window: return {'state':'not_due'}
     start,end=window
-    existing=db.execute('SELECT state FROM issues WHERE id=?',(start,)).fetchone()
+    issue_key=period(date.fromisoformat(start))[0] if kind=='weekly' else start[:7]+'-monthly'
+    existing=db.execute('SELECT state FROM issues WHERE id=?',(issue_key,)).fetchone()
     if not existing or existing['state']!='published':
-        accepted=admit(db,day,end)
+        accepted=admit(db,day,end,cohort=cohort,kind=kind,ids=ids)
         accepted=[pid for pid in accepted if publication_day(json.loads(db.execute('SELECT data FROM papers WHERE id=?',(pid,)).fetchone()[0]))<=end]
         if not accepted and not existing: return {**export_confirmed(db,output),'window':window}
-        issue_id=build_issue(db,date.fromisoformat(start),only_ids=accepted,cutoff=end)
+        issue_id=build_issue(db,date.fromisoformat(start),only_ids=accepted,cutoff=end,kind=kind)
         with db:
             db.execute('BEGIN IMMEDIATE')
             # Recheck after draft construction, including any human-edited existing draft.
             for row in db.execute('SELECT papers.* FROM papers JOIN issue_items ON paper_id=papers.id WHERE issue_id=?',(issue_id,)).fetchall():
-                if not admission(db,row,day,end)['eligible'] or publication_day(json.loads(row['data']))>end:
+                pub_day=publication_day(json.loads(row['data']))
+                if not admission(db,row,day,end,cohort=cohort,kind=kind)['eligible'] or not pub_day or pub_day>end or (ids is not None and row['id'] not in ids):
                     db.execute('DELETE FROM issue_items WHERE issue_id=? AND paper_id=?',(issue_id,row['id']))
             if db.execute('SELECT 1 FROM issue_items WHERE issue_id=?',(issue_id,)).fetchone():
                 db.execute('INSERT OR REPLACE INTO issue_notices VALUES(?,?)',(issue_id,
-                    '本期监测仍为部分覆盖。缺材料或未完成核验的文献未纳入，可在后续期次补录；未收录不代表该刊没有相关研究。'))
+                    f'本次处理窗口：{start} 至 {end}。本期监测仍为部分覆盖。缺材料或未完成核验的文献未纳入，可在后续期次补录；未收录不代表该刊没有相关研究。'))
                 db.execute("UPDATE issues SET state='published',published_at=? WHERE id=?",(now(),issue_id))
     # A prior export failure can be retried without changing the published snapshot.
     return export_confirmed(db,output)
 
 
-def refresh_legacy(db):
+def refresh_legacy(db, *, cohort='monitoring', kind='weekly', ids=None):
     """Re-screen only unreviewed final candidates lacking current policy provenance."""
     count=revoked=0
     with db:
         db.execute('BEGIN IMMEDIATE')
-        for row in db.execute("SELECT * FROM papers WHERE state IN ('awaiting_review','approved') AND human_decision='' AND cohort='monitoring' AND id NOT IN (SELECT paper_id FROM issue_items JOIN issues ON issues.id=issue_id WHERE issues.state='published')").fetchall():
+        for row in db.execute("SELECT * FROM papers WHERE state IN ('awaiting_review','approved') AND human_decision='' AND cohort=? AND id NOT IN (SELECT paper_id FROM issue_items JOIN issues ON issues.id=issue_id WHERE issues.state='published')",(cohort,)).fetchall():
+            if ids is not None and row['id'] not in ids:continue
             result=json.loads(row['result'] or '{}')
             if row['journal'] not in registry() or unresolved_ai(db,row['id']): continue
-            if row['state']=='approved' and row['approval_actor']=='agent' and not admission(db,row)['eligible']:
+            if row['state']=='approved' and row['approval_actor']=='agent' and not admission(db,row,cohort=cohort,kind=kind)['eligible']:
                 result.pop('automatic_approval',None)
                 db.execute("DELETE FROM issue_items WHERE paper_id=? AND issue_id IN (SELECT id FROM issues WHERE state='draft')",(row['id'],))
                 db.execute("UPDATE papers SET state='awaiting_review',approval_actor='',result=?,revision=revision+1 WHERE id=?",(json.dumps(result),row['id']))
@@ -183,15 +189,25 @@ def refresh_legacy(db):
 
 
 def cycle(db, *, live=False, publish=False, max_tokens=0, max_groups=3, only=None,
-          output=None, day=None, runtime=None):
+          output=None, day=None, runtime=None, window=None, kind='weekly', cohort='monitoring', discover=True):
     cfg=runtime or json.loads((ROOT/'config/runtime.json').read_text('utf-8'))
     if publish and cfg.get('publication_mode')!='automatic':
         raise ValueError('Automatic publication is disabled; runtime mode must explicitly be automatic')
     if max_groups<1 or (live and max_tokens<1): raise ValueError('Live cycles require a positive shared token limit')
     if only and any(seed not in registry() for seed in only): raise ValueError('Unknown journal')
     day=day or today(); cycle_id=uuid4().hex
+    if kind not in {'weekly','monthly'} or cohort not in {'monitoring','baseline'}:raise ValueError('Invalid processing scope')
+    if cohort=='baseline' and window is None:raise ValueError('Historical processing requires an explicit window')
+    if kind=='monthly' and window is None:
+        window=issue_window(day.replace(day=1)-timedelta(days=1),'monthly')
+    if window:
+        start,end=map(date.fromisoformat,window)
+        if start>end or end>=day or issue_window(start,kind)[1]!=end.isoformat():
+            raise ValueError('Use one closed calendar window, with an optional shortened first week')
+        if kind=='monthly' and start.day!=1:raise ValueError('Monthly processing requires a full calendar month')
     result={'cycle_id':cycle_id,'mode':'live' if live else 'offline_shadow','steps':[],
-            'publication_requested':publish,'budget_tokens':max_tokens,'spent_tokens':0,'billing_unknown':False}
+            'publication_requested':publish,'budget_tokens':max_tokens,'spent_tokens':0,'billing_unknown':False,
+            'window':window,'kind':kind,'cohort':cohort}
     output=Path(output or ROOT/'outputs/public')
     def step(name,fn):
         try:
@@ -205,34 +221,42 @@ def cycle(db, *, live=False, publish=False, max_tokens=0, max_groups=3, only=Non
             from batch_screen import run as screen,apply_saved
             # Recover only saved material, without retrying unknown billable requests.
             for req in db.execute("SELECT id,response_path FROM ai_requests WHERE status NOT IN ('applied','acknowledged')").fetchall():
-                if Path(req['response_path']).is_file(): step('recover:'+req['id'],lambda req=req:apply_saved(db,req['id']))
-            for seed in only or registry():
+                if artifact_path(req['response_path']).is_file(): step('recover:'+req['id'],lambda req=req:apply_saved(db,req['id']))
+            for seed in (only or registry()) if discover else []:
                 if seed not in registry(): raise ValueError('Unknown journal')
-                step('collect:'+seed,lambda seed=seed:collect(db,[seed]))
-            step('type_prefilter',lambda:prefilter(db))
-            step('refresh_legacy',lambda:refresh_legacy(db))
+                if source_cycle(seed)!=kind:continue
+                step('collect:'+seed,lambda seed=seed:collect(db,[seed],**({'start':window[0],'end':window[1]} if window else {})))
+        processing_end=(closed_period(day) or ('',day.isoformat()))[1]
+        ids={r['id'] for r in db.execute('SELECT id,journal,data FROM papers WHERE cohort=?',(cohort,))
+             if source_cycle(r['journal'])==kind and ((publication_day(json.loads(r['data'])) or '')<=processing_end if not window else window[0]<=(publication_day(json.loads(r['data'])) or '')<=window[1])}
+        if live:
+            step('type_prefilter',lambda:prefilter(db,cohort,ids))
+            step('refresh_legacy',lambda:refresh_legacy(db,cohort=cohort,kind=kind,ids=ids))
             def paid(name,**kwargs):
                 if result['billing_unknown'] or result['spent_tokens']>=max_tokens: return
                 before={r[0] for r in db.execute('SELECT id FROM ai_requests')}
-                step(name,lambda:screen(db,max_tokens-result['spent_tokens'],group_size=3,max_groups=max_groups,
-                                       cycle_id=cycle_id,skip_blocked=True,cache=AI_CACHE,**kwargs))
+                step(name,lambda:screen(db,max_tokens-result['spent_tokens'],group_size=12 if kwargs.get('titles_only') else 3,max_groups=max_groups,
+                                       cycle_id=cycle_id,skip_blocked=True,cache=AI_CACHE,cohort=cohort,ids=ids,**kwargs))
                 for req in db.execute('SELECT id,detail,usage_json FROM ai_requests'):
                     if req['id'] in before or json.loads(req['detail']).get('cache_reused'): continue
                     usage=json.loads(req['usage_json'] or 'null') or {}
                     if type(usage.get('total_tokens')) is int and usage['total_tokens']>=0: result['spent_tokens']+=usage['total_tokens']
                     else: result['billing_unknown']=True
             paid('title_screen',titles_only=True)
-            step('enrich',lambda:enrich(db,10))
+            step('enrich',lambda:enrich(db,10,cohort=cohort,ids=ids))
             paid('abstract_screen')
             from quality import prepare
-            needs_checks={r['paper_id'] for r in inspect(db,day) if r['reason']=='verification_missing_or_stale'}
-            qa=step('prepare_verify',lambda:prepare(db,'verify',day.isoformat(),count=50,only_ids=needs_checks))
+            needs_checks={r['paper_id'] for r in inspect(db,day,cohort=cohort,kind=kind,ids=ids) if r['reason']=='verification_missing_or_stale'}
+            qa=step('prepare_verify',lambda:prepare(db,'verify',day.isoformat(),count=50,only_ids=needs_checks,cohort=cohort))
             if qa: paid('verify',quality_batch=qa['batch_id'])
-            audit=step('prepare_audit',lambda:prepare(db,'audit',day.isoformat(),count=12))
+            audit=step('prepare_audit',lambda:prepare(db,'audit',day.isoformat(),count=12,only_ids=ids,cohort=cohort))
             if audit: paid('audit',quality_batch=audit['batch_id'])
-        result['admission']=inspect(db,day)
-        result['publication']=step('publish',lambda:publish_ready(db,day,output)) if publish else {'state':'shadow_only'}
+        result['admission']=inspect(db,day,cohort=cohort,kind=kind,ids=ids)
+        result['publication']=step('publish',lambda:publish_ready(db,day,output,window=window,cohort=cohort,kind=kind,ids=ids)) if publish else {'state':'shadow_only'}
+        result['execution_status']='partial' if result['billing_unknown'] or any(s['status']=='failed' for s in result['steps']) else 'completed'
+        collected=[s for s in result['steps'] if s['stage'].startswith('collect:')]
+        result['coverage_status']='not_checked' if not collected else 'catalogue_checked' if all(s['status']=='ok' and s.get('result',{}).get('coverage')=='catalogue_checked' for s in collected) else 'partial'
         with db:
             db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',
-                       (now(),'cycle','partial' if any(s['status']=='failed' for s in result['steps']) else 'completed',json.dumps(result,ensure_ascii=False)))
+                       (now(),'cycle',result['execution_status'],json.dumps(result,ensure_ascii=False)))
     return result

@@ -51,6 +51,27 @@ class WorkflowTests(unittest.TestCase):
         self.add({**PAPER, 'doi': '10.1000/another', 'urls': ['https://example.org/another']})
         self.assertEqual(self.db.execute('SELECT count(*) FROM papers').fetchone()[0], 2)
 
+    def test_legacy_url_only_duplicate_merges_by_pii_without_deleting_history(self):
+        url='https://www.sciencedirect.com/science/article/pii/S123ABC'
+        duplicate=self.add({**PAPER,'doi':None,'urls':[url]})
+        with self.db:self.db.execute("DELETE FROM identities WHERE identity='pii:S123ABC'")
+        canonical=self.add({**PAPER,'urls':['https://linkinghub.elsevier.com/retrieve/pii/S123ABC']})
+        self.assertNotEqual(duplicate,canonical)
+        self.assertEqual(self.add({**PAPER,'doi':None,'urls':[url]}),canonical)
+        self.assertEqual(self.db.execute('SELECT state FROM papers WHERE id=?',(duplicate,)).fetchone()[0],'merged')
+        self.assertTrue(self.db.execute('SELECT 1 FROM observations WHERE paper_id=?',(duplicate,)).fetchone())
+        self.assertEqual(self.add({**PAPER,'doi':None,'urls':[url]}),canonical)
+
+    def test_conflicting_import_is_quarantined_without_losing_other_records(self):
+        self.add()
+        folder=self.root/'conflicts';folder.mkdir()
+        bad={**PAPER,'doi':'10.1000/conflict'}
+        good={**PAPER,'doi':'10.1000/valid','urls':['https://example.org/valid']}
+        (folder/'candidates.json').write_text(json.dumps([bad,good]))
+        self.assertEqual(import_audit(self.db,folder),1)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM papers').fetchone()[0],2)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM runs WHERE kind='identity-conflict' AND status='quarantined'").fetchone()[0],1)
+
     def test_crossref_does_not_reset_publisher_type_and_review(self):
         pid = self.add({**PAPER, 'title_source':'publisher_catalogue', 'type':'Article'})
         self.approve(pid)

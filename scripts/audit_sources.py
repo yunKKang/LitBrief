@@ -88,20 +88,10 @@ def issn_valid(value):
 
 
 def selected_journals():
-    text = (ROOT / 'docs' / 'journal-selection.md').read_text(encoding='utf-8')
-    active = text.split('## 重点文献来源', 1)[1].split('## 移除的既有候选', 1)[0]
-    result, display = [], '重点文献'
-    for line in active.splitlines():
-        if line.startswith('## 相关文献列表'):
-            display = '相关文献列表'
-        if line.startswith('| '):
-            cells = [x.strip() for x in line.strip('|').split('|')]
-            if len(cells) >= 2 and re.fullmatch(r'\d{4}-[\dX]{4}', cells[1]):
-                assert issn_valid(cells[1]), cells[1]
-                result.append({'title': cells[0], 'seed_issn': cells[1], 'display': display})
-    expected_count = int(re.search(r'首轮计划试运行 \*\*(\d+) 本', text).group(1))
-    assert len(result) == expected_count, len(result)
-    assert len({j['seed_issn'] for j in result}) == expected_count
+    result = [{k: source[k] for k in ('title', 'seed_issn', 'display')}
+              for source in load(ROOT / 'config/sources.json')]
+    if any(not issn_valid(j['seed_issn']) for j in result) or len({j['seed_issn'] for j in result}) != len(result):
+        raise ValueError('Invalid or duplicate journal ISSN')
     return result
 
 

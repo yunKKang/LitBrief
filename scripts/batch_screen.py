@@ -8,7 +8,7 @@ from pathlib import Path
 import time
 from uuid import uuid4
 
-from library import DATA, ROOT, TOPICS, connect, now, worker_lock, registry, unresolved_ai
+from library import DATA, ROOT, TOPICS, connect, now, worker_lock, registry, unresolved_ai, artifact_path, stored_path, identity_conflicts
 from screen_paper import SCHEMA, make_request, parse_response, post, settings
 
 
@@ -85,7 +85,7 @@ def apply_saved(db, request_id):
         raise ValueError('Unknown AI request')
     if request['status'] in {'applied', 'acknowledged'}:
         return {'applied': 0, 'already_resolved': True}
-    path = Path(request['response_path'])
+    path = artifact_path(request['response_path'])
     if not path.is_file():
         raise ValueError('No complete saved response; billing needs manual verification')
     response = json.loads(path.read_text('utf-8'))
@@ -181,7 +181,7 @@ def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, ma
         rows = db.execute(f"SELECT * FROM papers WHERE state IN {states} AND cohort=? AND human_decision='' ORDER BY id", (cohort,)).fetchall()
         active = registry()
         rows = [r for r in rows if r['journal'] in active and
-                bool(json.loads(r['result'] or '{}').get('title_screened')) != titles_only]
+                not identity_conflicts(db,r['id']) and bool(json.loads(r['result'] or '{}').get('title_screened')) != titles_only]
         if ids is not None:
             rows = [r for r in rows if r['id'] in ids]
         quality_mode = None
@@ -232,7 +232,7 @@ def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, ma
                     row['revision'] += 1
                 db.execute('INSERT INTO ai_requests VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                            (request_id, fingerprint, mode, json.dumps(batch, ensure_ascii=False),
-                            json.dumps(payload, ensure_ascii=False), str(saved.resolve()),
+                            json.dumps(payload, ensure_ascii=False), stored_path(saved),
                             'prepared' if cached_path else 'billing_unknown', None,
                             json.dumps({'cycle_id':cycle_id,'cache_reused':bool(cached_path)}), now(), now()))
             started = time.monotonic()

@@ -13,7 +13,7 @@ import sqlite3
 import stat
 from uuid import uuid4
 
-from library import ROOT, worker_lock, now
+from library import ROOT, worker_lock, now, artifact_path
 
 TABLES = ('papers','identities','observations','reviews','issues','issue_items','runs',
           'enrichment_schedule','enrichment_holds','ai_requests','quality_batches','quality_jobs','feedback','issue_notices')
@@ -106,7 +106,7 @@ def expired_candidates(db, cutoff, root):
     for r in db.execute('SELECT * FROM ai_requests'):
         inputs=json.loads(r['inputs']);ids={p['id'] for p in inputs}
         requests.append((r,ids))
-        response=Path(r['response_path']).resolve()
+        response=artifact_path(r['response_path'], root.parent).resolve()
         known_files.update({response,(root/'ai-trial'/(r['fingerprint']+'.group.json')).resolve(),
                             (root/'ai-trial'/(r['fingerprint']+'.response.json')).resolve()})
         if r['status'] not in {'applied','acknowledged'} or r['updated_at']>=cutoff:
@@ -152,7 +152,7 @@ def build_plan(db, root=None, clock=None):
                      len(json.dumps(slim_data(json.loads(r['data'])),ensure_ascii=False).encode())-
                      len(json.dumps(slim_result(json.loads(r['result'] or '{}')),ensure_ascii=False).encode()) for r in paper_rows)
         exports=[json.loads(r[0]) for r in db.execute("SELECT detail FROM runs WHERE kind='export' AND status='ready' ORDER BY id DESC")]
-        unresolved={Path(r[0]).resolve() for r in db.execute("SELECT response_path FROM ai_requests WHERE status NOT IN ('applied','acknowledged')")}
+        unresolved={artifact_path(r[0], root.parent).resolve() for r in db.execute("SELECT response_path FROM ai_requests WHERE status NOT IN ('applied','acknowledged')")}
         pending_material=db.execute("SELECT 1 FROM papers WHERE cohort='monitoring' AND state IN ('awaiting_abstract','needs_material','ai_error','screening') LIMIT 1").fetchone() is not None
     entries={};notes=[]
     def add(path,kind):
@@ -217,7 +217,7 @@ def build_plan(db, root=None, clock=None):
         except (ValueError,KeyError,OSError):notes.append('当前公开版本未通过校验，所有release均保留。')
     # Retire only exclusively expired, terminal request files. Old mixed caches stay protected.
     for req in requests:
-        candidates=[Path(req['response_path']),root/'ai-trial'/(req['fingerprint']+'.group.json'),root/'ai-trial'/(req['fingerprint']+'.response.json')]
+        candidates=[artifact_path(req['response_path'], root.parent),root/'ai-trial'/(req['fingerprint']+'.group.json'),root/'ai-trial'/(req['fingerprint']+'.response.json')]
         for p in candidates:
             if p.is_file() and p.resolve().is_relative_to(root/'ai-trial'):add(p,'retired_ai')
     database=str(Path(db.execute('PRAGMA database_list').fetchone()[2]).resolve())

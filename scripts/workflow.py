@@ -10,10 +10,11 @@ import audit_sources as audit
 from library import DATA, ROOT, connect, import_audit, ingest, now, today, worker_lock, build_issue, registry, archive_inactive_sources
 
 
-def collect(db, only=None):
+def collect(db, only=None, *, start=None, end=None, feeds_only=False):
     cfg = json.loads((ROOT / 'config/runtime.json').read_text(encoding='utf-8'))
-    end = today()
-    start = end - timedelta(days=cfg['lookback_days'])
+    end = date.fromisoformat(end) if isinstance(end,str) else end or today()
+    start = date.fromisoformat(start) if isinstance(start,str) else start or end - timedelta(days=cfg['lookback_days'])
+    if start>end or end>today():raise ValueError('Invalid collection window')
     folder = DATA / 'collections' / now().replace(':', '').replace('+', '_')
     old_output = audit.OUTPUT
     with worker_lock(DATA):
@@ -23,26 +24,30 @@ def collect(db, only=None):
             # Persist publisher discoveries before requesting Crossref.
             audit.run_publisher(args)
             import_audit(db, folder)
-            from publisher_collect import collect as publisher_html
-            publisher_html(db, folder / 'publisher-html', only)
-            # Traverse each year separately; the parser's single-year invariant is preserved.
-            for year in range(start.year, end.year + 1):
-                year_folder = folder / str(year)
-                audit.OUTPUT = year_folder
-                args.start = max(start, date(year, 1, 1)).isoformat()
-                args.end = min(end, date(year, 12, 31)).isoformat()
-                audit.run_catalogue(args)
-                import_audit(db, year_folder)
-            audit.OUTPUT = folder
-            args.start, args.end = start.isoformat(), end.isoformat()
-            audit.run_crossref(args)
-            import_audit(db, folder)
+            if not feeds_only:
+                from publisher_collect import collect as publisher_html
+                publisher_html(db, folder / 'publisher-html', only)
+                # Traverse each year separately; the parser's single-year invariant is preserved.
+                for year in range(start.year, end.year + 1):
+                    year_folder = folder / str(year)
+                    audit.OUTPUT = year_folder
+                    args.start = max(start, date(year, 1, 1)).isoformat()
+                    args.end = min(end, date(year, 12, 31)).isoformat()
+                    audit.run_catalogue(args)
+                    import_audit(db, year_folder)
+                audit.OUTPUT = folder
+                args.start, args.end = start.isoformat(), end.isoformat()
+                audit.run_crossref(args)
+                import_audit(db, folder)
             from prefilter import run as prefilter
             prefilter(db)
+            from source_coverage import summarize
+            source_status=summarize(db,folder,args.start,args.end,only)
             detail = {'folder': str(folder), 'start': args.start, 'end': args.end,
-                      'scope': only or 'all', 'coverage': 'partial: non-Nature full catalogues are not automated'}
+                      'scope': only or 'all', 'coverage': 'catalogue_checked' if source_status and all(s['coverage']=='catalogue_checked' for s in source_status) else 'partial',
+                      'sources':source_status}
             with db:
-                db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)', (now(), 'collect', 'partial', json.dumps(detail)))
+                db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)', (now(), 'collect', detail['coverage'], json.dumps(detail)))
             return detail
         finally:
             audit.OUTPUT = old_output
@@ -63,9 +68,9 @@ def status(db):
             'storage_bytes': size, 'storage_warning': size >= cfg['storage_warning_gb'] * 1024 ** 3}
 
 
-def enrich(db, max_items):
+def enrich(db, max_items, **kwargs):
     from enrichment import run
-    return run(db, max_items)
+    return run(db, max_items, **kwargs)
 
 
 def main():
@@ -78,6 +83,9 @@ def main():
     item.add_argument('file', type=Path)
     col = sub.add_parser('collect')
     col.add_argument('--only', nargs='+')
+    col.add_argument('--feeds-only',action='store_true',help='Lightweight discovery without catalogue or Crossref traversal')
+    col.add_argument('--start')
+    col.add_argument('--end')
     en = sub.add_parser('enrich')
     en.add_argument('--max-items', required=True, type=int)
     recovery = sub.add_parser('resume-enrichment', help='After inspection, clear selected holds; no network or AI')
@@ -93,6 +101,7 @@ def main():
     exp = sub.add_parser('export')
     exp.add_argument('--output', type=Path, default=ROOT / 'outputs/public')
     sub.add_parser('backup')
+    sub.add_parser('normalize-paths', help='Normalize existing evidence paths on the original host before migration; back up first')
     sub.add_parser('cleanup-plan',help='Create an exact retention preview; no deletion')
     clean=sub.add_parser('cleanup-apply',help='Apply only the unchanged explicitly confirmed preview')
     clean.add_argument('--plan',required=True,type=Path)
@@ -104,6 +113,11 @@ def main():
     loop.add_argument('--max-groups', type=int, default=3)
     loop.add_argument('--collect-only', dest='only', nargs='+', help='Limit discovery to these ISSNs; existing candidate processing remains global')
     loop.add_argument('--output', type=Path, default=ROOT/'outputs/public')
+    loop.add_argument('--window-start')
+    loop.add_argument('--window-end')
+    loop.add_argument('--kind', choices=['weekly','monthly'], default='weekly')
+    loop.add_argument('--cohort', choices=['monitoring','baseline'], default='monitoring')
+    loop.add_argument('--skip-discovery', action='store_true', help='Process the scoped existing queue without rediscovering sources')
     qa = sub.add_parser('prepare-quality', help='Prepare reproducible private samples; no AI calls')
     qa.add_argument('--mode',choices=['audit','verify'],required=True)
     qa.add_argument('--seed',required=True)
@@ -129,7 +143,7 @@ def main():
             with db:
                 result = {'paper_id': ingest(db, json.loads(args.file.read_text(encoding='utf-8-sig')), str(args.file))}
         elif args.command == 'collect':
-            result = collect(db, args.only)
+            result = collect(db, args.only,start=args.start,end=args.end,feeds_only=args.feeds_only)
         elif args.command == 'enrich':
             result = enrich(db, args.max_items)
         elif args.command == 'resume-enrichment':
@@ -151,8 +165,11 @@ def main():
             result=apply_plan(db,json.loads(args.plan.read_text('utf-8')),args.confirm)
         elif args.command == 'run-cycle':
             from automation import cycle
+            if bool(args.window_start)!=bool(args.window_end):p.error('Both window bounds are required')
             result=cycle(db,live=args.live,publish=args.publish,max_tokens=args.max_tokens,
-                         max_groups=args.max_groups,only=args.only,output=args.output)
+                         max_groups=args.max_groups,only=args.only,output=args.output,
+                         window=(args.window_start,args.window_end) if args.window_start else None,
+                         kind=args.kind,cohort=args.cohort,discover=not args.skip_discovery)
         elif args.command == 'prepare-quality':
             from quality import prepare
             result = prepare(db,args.mode,args.seed,args.count,args.targeted)
@@ -174,6 +191,10 @@ def main():
             from webapp import export_site
             release = export_site(db, args.output)
             result = {'public_directory': str(release), 'note': 'Serve or upload only this complete release, not its parent container.'}
+        elif args.command == 'normalize-paths':
+            from library import normalize_artifact_paths
+            with worker_lock(DATA):
+                result = normalize_artifact_paths(db)
         elif args.command == 'backup':
             backup = DATA / 'backups' / (now().replace(':', '').replace('+', '_') + '.sqlite3')
             backup.parent.mkdir(parents=True, exist_ok=True)
@@ -184,6 +205,8 @@ def main():
         else:
             result = status(db)
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    if result.get('execution_status')=='partial':
+        raise SystemExit(2)
 
 
 if __name__ == '__main__':

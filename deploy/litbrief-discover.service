@@ -1,0 +1,22 @@
+[Unit]
+Description=LitBrief serial RSS discovery (no paid AI or publication)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=litbrief
+Group=litbrief
+WorkingDirectory=/opt/litbrief
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 scripts/workflow.py collect --feeds-only
+UMask=0077
+TimeoutStartSec=30min
+MemoryMax=512M
+CPUQuota=50%
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/litbrief/outputs

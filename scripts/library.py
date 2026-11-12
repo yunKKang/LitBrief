@@ -9,12 +9,16 @@ import os
 from threading import local
 from urllib.parse import urlsplit, urlunsplit
 
-from audit_sources import doi, plain, combined_works
+from audit_sources import doi, plain, combined_works, pii_in
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'outputs/library'
 TOPICS = ['产业与基础设施绿色转型', '全球生产网络与环境责任', '国际绿色产品标准', '供应链管理与韧性', '住房与建成环境']
 _locks = local()
+
+
+class IdentityConflict(ValueError):
+    pass
 
 
 def now():
@@ -23,6 +27,45 @@ def now():
 
 def today():
     return datetime.now(timezone(timedelta(hours=8))).date()
+
+
+def stored_path(path, root=None):
+    """Production evidence paths travel with the project; external test paths stay explicit."""
+    root = Path(root or ROOT).resolve()
+    path = Path(path).resolve()
+    return path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+
+
+def artifact_path(value, root=None):
+    from pathlib import PureWindowsPath
+    root = Path(root or ROOT).resolve()
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    if PureWindowsPath(value).is_absolute():
+        raise ValueError('Legacy Windows evidence path must be normalized before migration')
+    result = (root / path).resolve()
+    if not result.is_relative_to(root):
+        raise ValueError('Evidence path escapes the project')
+    return result
+
+
+def normalize_artifact_paths(db):
+    """Run on the original host before moving a database; preserve all evidence files."""
+    changes = []
+    for row in db.execute('SELECT id,response_path,status FROM ai_requests'):
+        path = artifact_path(row['response_path'])
+        relative = stored_path(path)
+        if relative != row['response_path']:
+            if not path.is_file() and row['status'] in {'applied', 'response_saved', 'validation_failed'}:
+                raise ValueError('Missing response file; cannot certify migration')
+            changes.append((relative, row['id']))
+    with db:
+        db.executemany('UPDATE ai_requests SET response_path=? WHERE id=?', changes)
+        if changes:
+            db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',
+                       (now(), 'path-migration', 'completed', json.dumps({'request_ids':[r[1] for r in changes]})))
+    return {'normalized_paths': len(changes)}
 
 
 def registry():
@@ -48,11 +91,15 @@ def archive_inactive_sources(db):
 
 def connect(path=DATA / 'library.sqlite3'):
     path = Path(path)
+    if path.resolve()==(DATA/'library.sqlite3').resolve() and (DATA/'REPLICA').is_file():
+        raise RuntimeError('This local database is an archived replica; use the server workbench via SSH')
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path, timeout=15)
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA foreign_keys=ON')
-    db.execute('PRAGMA journal_mode=WAL')
+    # A serial worker plus an occasional workbench does not need WAL. Rollback
+    # journaling avoids WAL-specific races on older platform SQLite libraries.
+    db.execute('PRAGMA journal_mode=DELETE')
     db.executescript('''
     CREATE TABLE IF NOT EXISTS papers (
       id INTEGER PRIMARY KEY, journal TEXT NOT NULL, data TEXT NOT NULL,
@@ -178,6 +225,7 @@ def identities(paper):
             u = urlsplit(clean)
             if u.hostname not in {'doi.org', 'dx.doi.org'}:
                 keys.append('url:' + urlunsplit((u.scheme, u.netloc, u.path.rstrip('/'), '', '')))
+            if identifier := pii_in(clean):keys.append('pii:' + identifier)
     for pii in paper.get('piis', []) + ([paper['pii']] if paper.get('pii') else []):
         keys.append('pii:' + str(pii).upper())
     if not keys:
@@ -206,10 +254,31 @@ def ingest(db, paper, origin):
     keys = identities(paper)
     matches = {r[0] for key in keys for r in db.execute('SELECT paper_id FROM identities WHERE identity=?', (key,))}
     if len(matches) > 1:
-        raise ValueError('Conflicting identities require manual reconciliation')
+        # A DOI record and an untouched URL-only discovery can predate identity
+        # enrichment. Consolidate only with a shared publisher PII, never a title.
+        rows=[db.execute('SELECT * FROM papers WHERE id=?',(pid,)).fetchone() for pid in matches]
+        canonical=[r for r in rows if json.loads(r['data']).get('doi')]
+        duplicates=[r for r in rows if not json.loads(r['data']).get('doi')]
+        can_merge=len(canonical)==1 and duplicates and all(r['journal']==seed for r in rows)
+        if can_merge:
+            main_id=canonical[0]['id']
+            shared_pii=[key for key in keys if key.startswith('pii:') and db.execute('SELECT 1 FROM identities WHERE identity=? AND paper_id=?',(key,main_id)).fetchone()]
+            can_merge=bool(shared_pii)
+            for duplicate in duplicates:
+                protected=duplicate['human_decision'] or duplicate['state'] not in {'pending','awaiting_abstract'}
+                for table in ('reviews','feedback','issue_items','quality_jobs'):
+                    protected=protected or db.execute('SELECT 1 FROM '+table+' WHERE paper_id=?',(duplicate['id'],)).fetchone()
+                protected=protected or db.execute("SELECT 1 FROM ai_requests,json_each(inputs) item WHERE json_extract(item.value,'$.id')=?",(duplicate['id'],)).fetchone()
+                can_merge=can_merge and not protected
+        if not can_merge:raise IdentityConflict('Conflicting identities require reconciliation')
+        for duplicate in duplicates:
+            db.execute('UPDATE identities SET paper_id=? WHERE paper_id=?',(main_id,duplicate['id']))
+            db.execute("UPDATE papers SET state='merged',cohort='merged_identity',revision=revision+1,updated_at=? WHERE id=?",(now(),duplicate['id']))
+        db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',(now(),'identity-merge','completed',json.dumps({'canonical':main_id,'aliases':[r['id'] for r in duplicates],'evidence':shared_pii})))
+        matches={main_id}
     row = db.execute('SELECT * FROM papers WHERE id=?', (next(iter(matches)),)).fetchone() if matches else None
     if row and row['journal'] != seed:
-        raise ValueError('Identity matched a different journal; manual review required')
+        raise IdentityConflict('Identity matched a different journal; review required')
     timestamp = now()
     if row:
         old = json.loads(row['data'])
@@ -217,7 +286,7 @@ def ingest(db, paper, origin):
             from retention import slim_data
             paper=slim_data(paper)  # Rediscovery must not restore discarded payloads or paid queues.
         if old.get('doi') and paper.get('doi') and old['doi'] != paper['doi']:
-            raise ValueError('Conflicting DOI; refusing to merge')
+            raise IdentityConflict('Conflicting DOI; refusing to merge')
         merged = dict(old)
         # Missing metadata never erases a previously verified abstract or DOI.
         for k, value in paper.items():
@@ -257,8 +326,9 @@ def ingest(db, paper, origin):
             state=row['state']
         if material_changed and not published and row['human_decision']:
             state = 'rejected' if row['human_decision'] == 'reject' else 'needs_review'
-        db.execute('UPDATE papers SET data=?,state=?,result=?,updated_at=?,revision=revision+1 WHERE id=?',
-                   (json.dumps(merged, ensure_ascii=False), state, None if material_changed and not published and not old.get('retention_compacted') else row['result'], timestamp, row['id']))
+        if merged != old or state != row['state']:
+            db.execute('UPDATE papers SET data=?,state=?,result=?,updated_at=?,revision=revision+1 WHERE id=?',
+                       (json.dumps(merged, ensure_ascii=False), state, None if material_changed and not published and not old.get('retention_compacted') else row['result'], timestamp, row['id']))
         if material_changed:
             db.execute('UPDATE papers SET material_changed=1 WHERE id=?', (row['id'],))
         paper_id = row['id']
@@ -290,33 +360,50 @@ def ingest(db, paper, origin):
 def import_audit(db, folder):
     folder = Path(folder)
     count = 0
+    conflicts=[]
+    def accept(paper,origin):
+        db.execute('SAVEPOINT ingest_record')
+        try:
+            result=ingest(db,paper,origin)
+            db.execute('RELEASE ingest_record')
+            return result is not None
+        except IdentityConflict as exc:
+            db.execute('ROLLBACK TO ingest_record');db.execute('RELEASE ingest_record')
+            detail={'origin':origin,'journal':paper.get('journal_seed_issn'),'doi':paper.get('doi'),
+                    'title':paper.get('title'),'identities':identities(paper),'reason':str(exc),
+                    'paper_ids':sorted({r[0] for key in identities(paper) for r in db.execute('SELECT paper_id FROM identities WHERE identity=?',(key,))})}
+            conflicts.append(detail)
+            db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',
+                       (now(),'identity-conflict','quarantined',json.dumps(detail,ensure_ascii=False)))
+            return False
     with db:
+        if not db.in_transaction:db.execute('BEGIN IMMEDIATE')
         # Independent streams: publisher discoveries are never contingent on Crossref.
         for name in ('candidates.json', 'publisher-pending.json'):
             if (folder / name).exists():
                 for paper in json.loads((folder / name).read_text(encoding='utf-8')):
-                    count += ingest(db, paper, str(folder / name)) is not None
+                    count += accept(paper, str(folder / name))
         for file in (folder / 'journals').glob('*.json'):
             data = json.loads(file.read_text(encoding='utf-8'))
             family = set((data.get('identity') or {}).get('ISSN', []))
             for entry in combined_works(data).values():
                 if not family.intersection(entry.get('issns', [])):
                     continue
-                count += ingest(db, {**entry, 'journal_seed_issn': data['seed_issn'], 'title_source': 'Crossref',
-                                     'abstract_source': 'Crossref' if entry.get('abstract') else None}, str(file)) is not None
+                count += accept({**entry, 'journal_seed_issn': data['seed_issn'], 'title_source': 'Crossref',
+                                     'abstract_source': 'Crossref' if entry.get('abstract') else None}, str(file))
         for file in (folder / 'publisher').glob('*.json'):
             data = json.loads(file.read_text(encoding='utf-8'))
             for source in data.get('sources', []):
                 for entry in (source.get('parsed') or {}).get('items', []):
-                    count += ingest(db, {**entry, 'journal_seed_issn': data['seed_issn'], 'title_source': 'publisher_feed'}, str(file)) is not None
+                    count += accept({**entry, 'journal_seed_issn': data['seed_issn'], 'title_source': 'publisher_feed'}, str(file))
         for file in (folder / 'catalogue').glob('*.json'):
             data = json.loads(file.read_text(encoding='utf-8'))
             for entry in data.get('items', []):
                 paper = {**entry, 'journal_seed_issn': data['seed_issn'], 'title_source': 'publisher_catalogue',
                          'urls': [entry['url']] if entry.get('url') else [],
                          'type': entry.get('article_type'), 'dates': {'publisher_online': entry.get('date')}}
-                count += ingest(db, paper, str(file)) is not None
-        db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)', (now(), 'import', 'completed', json.dumps({'folder': str(folder), 'observations': count})))
+                count += accept(paper, str(file))
+        db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)', (now(), 'import', 'partial' if conflicts else 'completed', json.dumps({'folder': str(folder), 'observations': count,'quarantined':len(conflicts)})))
     return count
 
 
@@ -359,6 +446,13 @@ def unresolved_ai(db, paper_id):
       WHERE json_extract(item.value,'$.id')=? AND status NOT IN ('applied','acknowledged')""", (paper_id,))]
 
 
+def identity_conflicts(db, paper_id):
+    return [r[0] for r in db.execute("""SELECT DISTINCT runs.id FROM runs
+      JOIN json_each(runs.detail,'$.identities') AS item
+      JOIN identities ON identities.identity=item.value
+      WHERE runs.kind='identity-conflict' AND runs.status='quarantined' AND identities.paper_id=?""",(paper_id,))]
+
+
 def period(day=None):
     cfg = json.loads((ROOT / 'config/runtime.json').read_text(encoding='utf-8'))
     anchor = date.fromisoformat(cfg['issue_anchor'])
@@ -367,22 +461,35 @@ def period(day=None):
     return start.isoformat(), (start + timedelta(days=cfg['issue_days'] - 1)).isoformat()
 
 
-def build_issue(db, day=None, *, only_ids=None, cutoff=None):
-    start, end = period(day)
+def source_cycle(seed):
+    return registry().get(seed,{}).get('screening_cycle','weekly')
+
+
+def issue_window(day, kind='weekly'):
+    if kind=='weekly':return period(day)
+    if kind!='monthly':raise ValueError('Unknown publication cycle')
+    import calendar
+    return day.replace(day=1).isoformat(),day.replace(day=calendar.monthrange(day.year,day.month)[1]).isoformat()
+
+
+def build_issue(db, day=None, *, only_ids=None, cutoff=None, kind='weekly'):
+    start, end = issue_window(day or today(),kind)
+    issue_id = start if kind=='weekly' else start[:7]+'-monthly'
     with db:
         db.execute('BEGIN IMMEDIATE')
-        existing = db.execute('SELECT state FROM issues WHERE id=?', (start,)).fetchone()
+        existing = db.execute('SELECT state FROM issues WHERE id=?', (issue_id,)).fetchone()
         if existing and existing['state'] == 'published':
-            return start  # Daily preparation is idempotent; late papers wait for the next period.
-        db.execute("INSERT OR IGNORE INTO issues VALUES(?,?,'draft',?,NULL)", (start, end, now()))
+            return issue_id  # Preparation is idempotent; late papers wait for the next period.
+        db.execute("INSERT OR IGNORE INTO issues VALUES(?,?,'draft',?,NULL)", (issue_id, end, now()))
         for row in db.execute("SELECT * FROM papers WHERE state='approved' AND material_changed=0 AND id NOT IN (SELECT paper_id FROM issue_items)").fetchall():
+            if identity_conflicts(db,row['id']):continue
             if only_ids is not None and row['id'] not in only_ids:
                 continue
             data, result = json.loads(row['data']), json.loads(row['result'])
             if cutoff and (not publication_day(data) or publication_day(data)>cutoff):
                 continue
             source = registry().get(row['journal'])
-            if not source:
+            if not source or source_cycle(row['journal'])!=kind:
                 continue
             # Explicit public allowlist: never serialize source abstracts, logs or credentials.
             snapshot = {'id': row['id'], 'title': data['title'], 'doi': data.get('doi'),
@@ -391,10 +498,11 @@ def build_issue(db, day=None, *, only_ids=None, cutoff=None):
                         'summary': result['summary'], 'topics': json.loads(row['topics']),
                         'reason': result.get('reason',''),
                         'basis': '仅依据摘要', 'abstract_source': data.get('abstract_source'),
-                        'dates': data.get('dates', {}),
+                        'dates': data.get('dates', {}), 'first_seen': row['first_seen'],
+                        'late_arrival':bool(publication_day(data) and publication_day(data)<start),
                         'url': ('https://doi.org/' + data['doi']) if data.get('doi') else next((u for u in data.get('urls', []) if safe_url(u)), '')}
-            db.execute('INSERT INTO issue_items VALUES(?,?,?)', (start, row['id'], json.dumps(snapshot, ensure_ascii=False)))
-    return start
+            db.execute('INSERT INTO issue_items VALUES(?,?,?)', (issue_id, row['id'], json.dumps(snapshot, ensure_ascii=False)))
+    return issue_id
 
 
 def publish_issue(db, issue_id):
@@ -418,15 +526,30 @@ def worker_lock(folder=DATA):
         return
     folder.mkdir(parents=True, exist_ok=True)
     lock = folder / 'worker.lock'
-    try:
-        stream = lock.open('x', encoding='utf-8')
-    except FileExistsError:
-        raise RuntimeError('Another worker may be running; inspect worker.lock before manual recovery') from None
-    try:
-        with stream:
-            stream.write(json.dumps({'pid': os.getpid(), 'started': now()}))
-        _locks.held = held | {key}
-        yield
-    finally:
-        _locks.held = held
-        lock.unlink()
+    # Never unlink an advisory-lock file: another process may already have its
+    # inode open. The OS releases this lock even after a forced process exit.
+    with lock.open('a+b') as stream:
+        if stream.tell() == 0:
+            stream.write(b'\0'); stream.flush()
+        stream.seek(0)
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise RuntimeError('Another worker holds the process lock') from None
+        try:
+            stream.seek(0); stream.truncate()
+            stream.write(json.dumps({'pid': os.getpid(), 'started': now()}).encode('utf-8')); stream.flush()
+            _locks.held = held | {key}
+            yield
+        finally:
+            _locks.held = held
+            stream.seek(0)
+            if os.name == 'nt':
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)

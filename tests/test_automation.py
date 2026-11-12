@@ -75,6 +75,13 @@ class AutomationTests(unittest.TestCase):
         revision=row['revision'];automation.admit(self.db,self.day)
         self.assertEqual(self.row(pid)['revision'],revision)
 
+    def test_identical_rediscovery_preserves_current_verification(self):
+        pid=self.ready();before=dict(self.row(pid))
+        with self.db:ingest(self.db,json.loads(before['data']),'same-content-new-poll')
+        after=dict(self.row(pid))
+        self.assertEqual(after,before)
+        self.assertTrue(automation.admission(self.db,after,self.day)['eligible'])
+
     def test_policy_material_and_feedback_changes_each_prevent_admission(self):
         pid=self.ready()
         with patch.object(automation,'policy_hash',return_value='new-policy'):
@@ -158,7 +165,9 @@ class AutomationTests(unittest.TestCase):
 
     def test_metadata_only_update_refreshes_stale_agent_approval(self):
         pid=self.ready();automation.admit(self.db,self.day)
-        with self.db:ingest(self.db,json.loads(self.row(pid)['data']),'repeat observation')
+        paper=json.loads(self.row(pid)['data'])
+        paper['dates']['published-print']='2027-01-01'
+        with self.db:ingest(self.db,paper,'changed date metadata')
         self.assertEqual(automation.refresh_legacy(self.db)['stale_agent_approvals'],1)
         self.assertEqual(self.row(pid)['state'],'awaiting_review')
         self.assertEqual(self.row(pid)['approval_actor'],'')

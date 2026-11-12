@@ -24,7 +24,9 @@ def issue_body(db, issue_id, preview=False):
     if not issue:
         raise ValueError('Unknown issue')
     items = [json.loads(r[0]) for r in db.execute('SELECT snapshot FROM issue_items WHERE issue_id=? ORDER BY paper_id', (issue_id,))]
-    body=render_collection(items, issue_id, issue['end_date'], preview=preview)
+    monthly=issue_id.endswith('-monthly')
+    body=render_collection(items, issue_id[:7]+'-01' if monthly else issue_id, issue['end_date'], preview=preview)
+    if monthly:body=body.replace('<h1>本期文献</h1>','<h1>月度补充</h1>',1)
     notice=db.execute('SELECT note FROM issue_notices WHERE issue_id=?',(issue_id,)).fetchone()
     return body+(f'<p class="notice">{h(notice[0])}</p>' if notice else '')
 
@@ -61,6 +63,8 @@ def export_site(db, target):
             with db:
                 db.execute('BEGIN')
                 detail['issues'] = [r[0] for r in db.execute("SELECT id FROM issues WHERE state='published' ORDER BY id")]
+                from provenance import build_identity
+                detail['provenance'] = build_identity(db)
                 _render_site(db, release)
             detail['files'] = validate_release(release)
             atomic_write(target / 'latest.json', json.dumps({**detail, 'directory': release.relative_to(target).as_posix(), 'run_id': run_id}, ensure_ascii=False, indent=2))
@@ -131,7 +135,7 @@ def _render_site(db, target):
     atomic_write(target / 'about.html', shell('选文标准', about))
 
 
-STATES = {'pending': '待 AI 筛选', 'awaiting_abstract': '待补摘要', 'screening': '调用中／中断待核',
+STATES = {'merged':'已合并题录', 'pending': '待 AI 筛选', 'awaiting_abstract': '待补摘要', 'screening': '调用中／中断待核',
           'needs_review': '材料变化待复审',
           'awaiting_review': '推荐待审', 'approved': '已通过', 'rejected': '人工排除', 'ai_error': '调用或校验失败',
           'ai_excluded':'AI 排除抽检', 'needs_material':'材料待核','type_excluded':'类型排除'}
@@ -169,7 +173,7 @@ def preview_window(db):
 def review_index(db, query):
     state = query.get('state', ['awaiting_review'])[0]
     cohort = query.get('cohort', ['monitoring'])[0]
-    scopes={'monitoring':'日常监测','baseline':'历史校准样本','date_unverified':'日期待核','inactive_source':'停用来源留档','all':'全部记录'}
+    scopes={'monitoring':'日常监测','baseline':'历史校准样本','date_unverified':'日期待核','inactive_source':'停用来源留档','merged_identity':'已合并题录','all':'全部记录'}
     if state not in STATES and state != 'all' or cohort not in scopes:
         raise ValueError('Invalid queue selection')
     page=max(1,int(query.get('page',['1'])[0]))

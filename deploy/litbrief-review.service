@@ -1,0 +1,24 @@
+[Unit]
+Description=LitBrief private loopback workbench
+After=network.target
+
+[Service]
+Type=simple
+User=litbrief
+Group=litbrief
+WorkingDirectory=/opt/litbrief
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 scripts/webapp.py --port 8766
+Restart=on-failure
+RestartSec=10
+UMask=0077
+MemoryMax=256M
+CPUQuota=25%
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/litbrief/outputs
+
+[Install]
+WantedBy=multi-user.target
