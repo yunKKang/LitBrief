@@ -4,9 +4,11 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch,Mock
+import urllib.error
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from screen_paper import make_request, parse_response, screen, restore_excerpt
+from screen_paper import make_request, parse_response, screen, restore_excerpt, post, ProviderError, failure_details
 
 PAPER = {'journal_seed_issn': '0306-2619', 'title': 'Synthetic test paper',
          'abstract': 'Housing retrofit reduces energy demand.', 'abstract_source': 'test fixture'}
@@ -27,6 +29,16 @@ def response():
 
 
 class ScreeningTests(unittest.TestCase):
+    def test_http_failure_keeps_status_without_sensitive_response_text(self):
+        opener=Mock()
+        opener.open.side_effect=urllib.error.HTTPError('https://example.invalid/private',429,'sensitive-provider-text',{},None)
+        with patch('screen_paper.urllib.request.build_opener',return_value=opener):
+            with self.assertRaises(ProviderError) as raised:post(CONFIG,{})
+        self.assertEqual(failure_details(raised.exception),{'error_type':'ProviderError','provider_error':'http','http_status':429})
+        self.assertNotIn('sensitive-provider-text',str(raised.exception))
+        self.assertNotIn(CONFIG['api_key'],str(raised.exception))
+        self.assertEqual(opener.open.call_count,1)
+
     def test_hyphen_restoration_keeps_meaning_and_requires_unique_source(self):
         self.assertEqual(restore_excerpt('The in-use stock','The in\u2010use stock grew.'),'The in\u2010use stock')
         self.assertEqual(restore_excerpt('-20%','\u221220%'),'-20%')

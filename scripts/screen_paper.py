@@ -145,6 +145,22 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None  # Never forward Authorization to a redirected endpoint.
 
 
+class ProviderError(RuntimeError):
+    """Safe diagnostics without a URL, credentials, headers or response body."""
+    def __init__(self, category, http_status=None):
+        self.category=category
+        self.http_status=http_status
+        super().__init__(f'Provider {category} failure'+(f' (HTTP {http_status})' if http_status else '')+'; no automatic retry')
+
+
+def failure_details(exc):
+    detail={'error_type':type(exc).__name__}
+    if isinstance(exc,ProviderError):
+        detail['provider_error']=exc.category
+        if exc.http_status is not None:detail['http_status']=exc.http_status
+    return detail
+
+
 def post(config, payload):
     request = urllib.request.Request(
         config['base_url'] + '/responses',
@@ -156,9 +172,11 @@ def post(config, payload):
         with urllib.request.build_opener(NoRedirect).open(request, timeout=180) as response:
             return json.load(response)
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f'Provider HTTP {exc.code}; no automatic retry') from None
+        raise ProviderError('http',exc.code) from None
     except (urllib.error.URLError, TimeoutError):
-        raise RuntimeError('Provider transport failure; billing unknown; no automatic retry') from None
+        raise ProviderError('transport') from None
+    except json.JSONDecodeError:
+        raise ProviderError('invalid_json') from None
 
 
 def screen(paper, config, output, transport=post):
@@ -192,7 +210,7 @@ def screen(paper, config, output, transport=post):
         event['state'] = 'completed'
         return result
     except (ValueError, RuntimeError) as exc:
-        event['error'] = str(exc)
+        event.update(failure_details(exc))
         raise
     finally:
         event['elapsed_seconds'] = round(time.monotonic() - started, 3)

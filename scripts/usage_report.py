@@ -30,6 +30,7 @@ def report(db, log_path=None):
             records[key]={'usage':event.get('usage'),'status':event.get('state'),'legacy':not bool(event.get('request_id'))}
     totals={k:0 for k in ('calls','input','output','total','reasoning','cached','unknown','legacy_calls')}
     anomalies=[]
+    unknown_ids=[]
     for key,row in records.items():
         if row.get('skip'):continue
         totals['calls']+=1;totals['legacy_calls']+=bool(row.get('legacy'))
@@ -38,12 +39,14 @@ def report(db, log_path=None):
         valid=lambda n:type(n) is int and n>=0
         if valid(t):totals['total']+=t
         elif valid(i) and valid(o):totals['total']+=i+o
-        else:totals['unknown']+=1
+        else:
+            totals['unknown']+=1
+            if not row.get('legacy'):unknown_ids.append(key)
         if valid(i):totals['input']+=i
         if valid(o):totals['output']+=o
         if all(valid(n) for n in (i,o,t)) and t!=i+o:anomalies.append(key)
         for output,container,field in [('reasoning','output_tokens_details','reasoning_tokens'),('cached','input_tokens_details','cached_tokens')]:
             value=(usage.get(container) or {}).get(field)
             if valid(value):totals[output]+=value
-    return {**totals,'cache_reuses':cache_reuses,'arithmetic_mismatches':anomalies,'incomplete_log_lines':incomplete_lines,
+    return {**totals,'unknown_request_ids':unknown_ids,'cache_reuses':cache_reuses,'arithmetic_mismatches':anomalies,'incomplete_log_lines':incomplete_lines,
             'basis':'provider-reported; reasoning is part of output, cached is part of input; missing usage is not zero cost'}

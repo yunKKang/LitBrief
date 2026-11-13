@@ -88,3 +88,7 @@ sudo -u litbrief sh -c 'cd /opt/litbrief && python3 scripts/backtest.py --month 
 当前后台任务由独立临时单元`litbrief-backtest-202610.service`承载。运行时不要再启动第二份；可用`journalctl`查看进度，检查点位于`outputs/backtests/2026-10/progress.json`。临时单元停止后可能被systemd卸载，不能假定始终可以`systemctl start`重启；维护时重新用相同用户、工作目录与资源限制的`systemd-run`创建，或使用上面的前台入口。续跑读取原检查点，保留累计用量并重新检查各窗口；已完成的付费结果不重复请求。
 
 `evaluated_available_material`只表示当下可处理材料已走完，不能证明无遗漏或摘要全部取得；`evaluated_with_blocked_work`表示仍有未推进工作。日期待核、摘要缺失、概况核验未通过分别保留，不通过伪造上线日或放松核验凑出月刊。两刊日期问题的实测见[来源诊断](../docs/source-access.md#2026-11-13-月度来源日期缺口)。
+
+新增未知用量默认停止。用户明确接受某次未知费用、同意隔离该请求并继续其余文章后，可在回测命令添加`--isolate-unknown-request <请求ID>`；检查点保存具体授权ID，账本仍显示计费未知，受影响文章保持隔离，不自动重试或伪记0费用。再出现新的未知调用仍停止。2026-11-13已对一次涉及2篇摘要的失败取得此项授权；不构成所有未来失败的通用豁免。
+
+新失败日志保存安全的HTTP状态码或transport/invalid_json分类，不记录供应商错误正文、请求头或凭证。早期只记录RuntimeError的失败无法事后还原HTTP状态，不据此猜测限流或账号额度不足。

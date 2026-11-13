@@ -47,6 +47,19 @@ class RecoveryTests(unittest.TestCase):
     def request(self):
         return self.db.execute('SELECT * FROM ai_requests ORDER BY created_at DESC LIMIT 1').fetchone()
 
+    def test_provider_failure_keeps_diagnostics_and_unknown_cost_without_retry(self):
+        from screen_paper import ProviderError
+        send=Mock(side_effect=ProviderError('http',503))
+        with self.assertRaises(ProviderError):self.run_batch(send)
+        row=self.request()
+        self.assertEqual(row['status'],'billing_unknown')
+        self.assertIsNone(row['usage_json'])
+        self.assertEqual(json.loads(row['detail'])['http_status'],503)
+        event=json.loads((self.root/'cache/usage.jsonl').read_text().splitlines()[-1])
+        self.assertEqual(event['provider_error'],'http')
+        self.assertEqual(event['http_status'],503)
+        self.assertEqual(send.call_count,1)
+
     def test_explicit_empty_sample_never_expands_to_entire_queue(self):
         transport = Mock(side_effect=AssertionError('Empty sample must not call AI'))
         before = dict(self.db.execute('SELECT * FROM papers').fetchone())

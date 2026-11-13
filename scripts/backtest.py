@@ -49,7 +49,7 @@ def state(db,window):
             'gates':gates,'fingerprint':stamp}
 
 
-def evaluate(db, month, max_tokens, folder):
+def evaluate(db, month, max_tokens, folder, accepted_unknown_requests=()):
     folder.mkdir(parents=True,exist_ok=True)
     progress=folder/'progress.json'
     initial=usage(db)
@@ -57,10 +57,16 @@ def evaluate(db, month, max_tokens, folder):
         'month':month,'started_at':now(),'initial_usage':initial['total'],
         'initial_unknown':initial['unknown'],'windows':windows(month),'runs':[]}
     if plan['month']!=month:raise ValueError('Checkpoint month does not match request')
+    for request_id in accepted_unknown_requests:
+        row=db.execute('SELECT status FROM ai_requests WHERE id=?',(request_id,)).fetchone()
+        if not row or row['status']!='billing_unknown':
+            raise ValueError('Only a known billing-unknown request may be explicitly isolated')
+    plan['accepted_unknown_requests']=sorted(set(plan.get('accepted_unknown_requests',[]))|set(accepted_unknown_requests))
     plan['soft_token_threshold']=max_tokens
     def save(status):
         current=usage(db);plan.update(status=status,updated_at=now(),spent_tokens=current['total']-plan['initial_usage'],
-          unknown_calls_added=current['unknown']-plan['initial_unknown'])
+          unknown_calls_added=current['unknown']-plan['initial_unknown'],
+          accepted_unknown_still_unpriced=len(set(current.get('unknown_request_ids',[]))&set(plan['accepted_unknown_requests'])))
         atomic_write(progress,json.dumps(plan,ensure_ascii=False,indent=2))
     save('running')
     for window in plan['windows']:
@@ -76,7 +82,7 @@ def evaluate(db, month, max_tokens, folder):
             if window['finished']:
                 window.pop('stop_reason',None)
                 break
-            if plan['unknown_calls_added']>0:
+            if plan['unknown_calls_added']>plan['accepted_unknown_still_unpriced']:
                 save('billing_needs_attention');return plan
             if plan['spent_tokens']>=max_tokens:
                 save('soft_threshold_reached');return plan
@@ -105,10 +111,12 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--month',required=True)
     parser.add_argument('--max-tokens',required=True,type=int)
+    parser.add_argument('--isolate-unknown-request',action='append',default=[],
+                        help='Explicitly accept unknown cost for this request while leaving its papers quarantined; never retries it')
     args=parser.parse_args()
     if args.max_tokens<=0:parser.error('A positive soft token threshold is required')
     with worker_lock(DATA),closing(connect()) as db:
-        plan=evaluate(db,args.month,args.max_tokens,ROOT/'outputs/backtests'/args.month)
+        plan=evaluate(db,args.month,args.max_tokens,ROOT/'outputs/backtests'/args.month,args.isolate_unknown_request)
     print(json.dumps({'status':plan['status'],'spent_tokens':plan['spent_tokens'],'published':False}),flush=True)
     if plan['status']!='evaluated_available_material':raise SystemExit(2)
 

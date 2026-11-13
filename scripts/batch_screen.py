@@ -9,7 +9,7 @@ import time
 from uuid import uuid4
 
 from library import DATA, ROOT, TOPICS, connect, now, worker_lock, registry, unresolved_ai, artifact_path, stored_path, identity_conflicts
-from screen_paper import SCHEMA, make_request, parse_response, post, settings
+from screen_paper import SCHEMA, make_request, parse_response, post, settings, failure_details
 
 
 def payload_for(rows, config, titles_only=False):
@@ -261,8 +261,12 @@ def run(db, max_tokens, group_size=6, cohort='monitoring', titles_only=False, ma
                     spent += usage['total_tokens']
                 print(json.dumps({'processed': processed, 'tokens': spent, 'request_id': request_id}), flush=True)
             except Exception as exc:
-                event['error_type'] = type(exc).__name__
+                diagnostic=failure_details(exc)
+                event.update(diagnostic)
                 with db:
+                    detail=json.loads(db.execute('SELECT detail FROM ai_requests WHERE id=?',(request_id,)).fetchone()[0])
+                    db.execute('UPDATE ai_requests SET detail=?,updated_at=? WHERE id=?',
+                               (json.dumps({**detail,**diagnostic}),now(),request_id))
                     for row in batch:
                         if quality_mode:
                             continue
