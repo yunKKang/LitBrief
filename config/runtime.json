@@ -1,7 +1,7 @@
 {
   "issue_anchor": "2026-11-08",
   "issue_days": 7,
-  "publication_mode": "manual",
+  "publication_mode": "automatic",
   "lookback_days": 14,
   "storage_warning_gb": 10,
   "ai_max_concurrency": 5,
