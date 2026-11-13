@@ -97,7 +97,7 @@ sudo -u litbrief sh -c 'cd /opt/litbrief && python3 scripts/backtest.py --month 
 sudo -u litbrief sh -c 'cd /opt/litbrief && python3 scripts/backfill_window.py --start 2026-11-01 --end 2026-11-07 --max-tokens 10000000 --max-groups 12'
 ```
 
-2026-11-13已启动临时单元`litbrief-backfill-20261101.service`。检查点位于`outputs/backfills/2026-11-01_2026-11-07/progress.json`，不生成公开期次。11月15日的周日任务窗口固定为11月8–14日；回补完成的记录不会再次进入付费筛选。
+2026-11-13已启动临时单元`litbrief-backfill-20261101.service`。该任务因第二次未知费用调用自动停止：安全分类为transport，涉及3篇核验，未返回usage且未重试。当前672条中9篇通过准入，37条仍待处理；检查点位于`outputs/backfills/2026-11-01_2026-11-07/progress.json`，不生成公开期次。核对供应商账单／网络状态并明确恢复后，才可用同一入口续跑。11月15日的周日任务窗口固定为11月8–14日；回补完成的记录不会再次进入付费筛选。
 
 `evaluated_available_material`只表示当下可处理材料已走完，不能证明无遗漏或摘要全部取得；`evaluated_with_blocked_work`表示仍有未推进工作。日期待核、摘要缺失、概况核验未通过分别保留，不通过伪造上线日或放松核验凑出月刊。两刊日期问题的实测见[来源诊断](../docs/source-access.md#2026-11-13-月度来源日期缺口)。
 
