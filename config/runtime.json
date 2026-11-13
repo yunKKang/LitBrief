@@ -8,6 +8,6 @@
   "ai_workers": 1,
   "publisher_max_concurrency": 1,
   "request_interval_seconds": 2,
-  "weekly_token_budget": 2000000,
-  "monthly_token_budget": 2000000
+  "weekly_token_budget": 10000000,
+  "monthly_token_budget": 10000000
 }
