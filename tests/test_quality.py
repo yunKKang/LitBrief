@@ -21,6 +21,17 @@ def response(items):
 
 
 class QualityTests(unittest.TestCase):
+    def test_one_invalid_quote_is_held_without_discarding_valid_peers(self):
+        rows=[{'id':1,'data':json.dumps({'abstract':'Stock increased 10%.'})},
+              {'id':2,'data':json.dumps({'abstract':'Trade reduced emissions.'})}]
+        items=[{'id':1,'verdict':'supported','reason':'claim','evidence':['Stock increased 20%.'],'issues':[]},
+               {'id':2,'verdict':'supported','reason':'claim','evidence':['Trade reduced emissions.'],'issues':[]}]
+        result=quality.validate(response(items),rows,'verify',partial=True)
+        self.assertEqual(result[1]['actor'],'system')
+        self.assertEqual(result[1]['verdict'],'insufficient')
+        self.assertEqual(result[2]['verdict'],'supported')
+        with self.assertRaises(ValueError):quality.validate(response(items),rows,'verify')
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name)
         self.db=connect(self.root/'db.sqlite3')

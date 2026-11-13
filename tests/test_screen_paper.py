@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from screen_paper import make_request, parse_response, screen
+from screen_paper import make_request, parse_response, screen, restore_excerpt
 
 PAPER = {'journal_seed_issn': '0306-2619', 'title': 'Synthetic test paper',
          'abstract': 'Housing retrofit reduces energy demand.', 'abstract_source': 'test fixture'}
@@ -27,6 +27,13 @@ def response():
 
 
 class ScreeningTests(unittest.TestCase):
+    def test_hyphen_restoration_keeps_meaning_and_requires_unique_source(self):
+        self.assertEqual(restore_excerpt('The in-use stock','The in\u2010use stock grew.'),'The in\u2010use stock')
+        self.assertEqual(restore_excerpt('-20%','\u221220%'),'-20%')
+        self.assertEqual(restore_excerpt('in-use','in\u2010use and in\u2011use'),'in-use')
+        self.assertEqual(restore_excerpt('stocks grew 20%','stocks grew 10%'),'stocks grew 20%')
+
+
     def test_quote_initial_capitalization_restores_exact_source(self):
         good=response()
         good['output'][1]['content'][0]['text']=json.dumps({**RESULT,'evidence':['Reduces energy demand.']})

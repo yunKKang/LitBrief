@@ -12,9 +12,16 @@ import automation
 from library import connect,ingest,review,TOPICS
 from source_coverage import summarize
 from test_workflow import PAPER
+from backtest import windows
 
 
 class PeriodScopeTests(unittest.TestCase):
+    def test_october_plan_has_five_weekly_windows_and_one_monthly_scope(self):
+        plan=windows('2026-10')
+        self.assertEqual(len(plan),6)
+        self.assertEqual(plan[0],{'kind':'weekly','start':'2026-10-01','end':'2026-10-03'})
+        self.assertEqual(plan[-1],{'kind':'monthly','start':'2026-10-01','end':'2026-10-31'})
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name)
         self.db=connect(self.root/'db.sqlite3')
@@ -54,6 +61,15 @@ class PeriodScopeTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT count(*) FROM issues').fetchone()[0],0)
         with self.assertRaises(ValueError):self.run_window('2026-10-01','2026-10-04')
         with self.assertRaises(ValueError):self.run_window('2026-10-02','2026-10-31','monthly')
+
+    def test_monthly_cycle_excludes_current_month_candidates(self):
+        previous=self.paper('previous','2026-10-15','0306-2619')
+        current=self.paper('current','2026-11-10','0306-2619')
+        with self.db:self.db.execute("UPDATE papers SET cohort='monitoring'")
+        automation.cycle(self.db,publish=True,day=date(2026,11,13),kind='monthly',
+                         output=self.root/'public',runtime={'publication_mode':'automatic'})
+        self.assertEqual([r[0] for r in self.db.execute('SELECT paper_id FROM issue_items')],[previous])
+        self.assertIsNone(self.db.execute('SELECT 1 FROM issue_items WHERE paper_id=?',(current,)).fetchone())
 
     def test_coverage_does_not_equate_http_success_or_crossref_to_complete(self):
         folder=self.root/'collection';(folder/'publisher').mkdir(parents=True)

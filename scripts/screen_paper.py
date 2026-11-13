@@ -126,6 +126,20 @@ def parse_response(response, abstract):
     return result
 
 
+def restore_excerpt(excerpt, abstract):
+    """Restore a unique typography-only hyphen variant to the exact source text.
+
+    Deliberately excludes en/em dashes, minus signs, numbers, whitespace and words.
+    The saved raw model response remains unchanged for inspection.
+    """
+    if not excerpt or excerpt in abstract:return excerpt
+    table=str.maketrans({'\u2010':'-','\u2011':'-'})
+    needle=excerpt.translate(table);haystack=abstract.translate(table)
+    start=haystack.find(needle)
+    if start<0 or haystack.find(needle,start+1)>=0:return excerpt
+    return abstract[start:start+len(excerpt)]
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None  # Never forward Authorization to a redirected endpoint.

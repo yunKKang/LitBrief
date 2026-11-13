@@ -96,6 +96,7 @@ def main():
     ai.add_argument('--max-tokens', type=int, required=True)
     ai.add_argument('--ids', nargs='+', type=int, help='Optional explicit calibration samples; other candidates remain queued')
     sub.add_parser('status')
+    sub.add_parser('usage',help='Reconcile provider-reported usage across the request ledger and legacy logs')
     sub.add_parser('sync-sources', help='Archive inactive sources without deleting records or calling AI')
     sub.add_parser('prepare-issue')
     exp = sub.add_parser('export')
@@ -191,6 +192,9 @@ def main():
             from webapp import export_site
             release = export_site(db, args.output)
             result = {'public_directory': str(release), 'note': 'Serve or upload only this complete release, not its parent container.'}
+        elif args.command == 'usage':
+            from usage_report import report
+            result=report(db)
         elif args.command == 'normalize-paths':
             from library import normalize_artifact_paths
             with worker_lock(DATA):

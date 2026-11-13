@@ -125,3 +125,11 @@ Elsevier 官方文档说明：API key 标识应用，**本身不授予内容权�
 真实RSS扫描27刊，21刊可解析、共828条；缺口为Nature Communications、Nature Cities、Nature Reviews Clean Technology、ES&T、Nature Food、Nature Health。一次feed成功不等于历史或未来完整覆盖。Nature正文返回200但标题为Client Challenge、无摘要区；已纳入访问受阻识别。OpenAlex对一篇期刊DOI返回了不同的预印本DOI，现有精确DOI检查拒收；不能拿错误材料补洞。Crossref样本含正式摘要，可作补充，不作为最新发现的唯一依赖。
 
 一次真实导入因旧库同PII的DOI记录和已AI排除的URL-only记录冲突而中断。当前已改为隔离并继续，其旧判断不自动丢弃；完全未处理的确切PII重复可安全归并。来源身份冲突是独立状态，不属于“无文献”。
+
+## 2026-11-13 月度来源日期缺口
+
+10月补采缓存显示，Crossref出版日期查询对Applied Energy返回134条、Building and Environment返回166条，均结束分页；按记录创建日期查漏分别返回211、150条。这里的“完整”只指对应Crossref查询，不代表出版社目录或首次在线发表窗口完整。两刊正式目录探测均为403。
+
+服务器库中两刊共有1018条题录，其中990条位于日期待核队列：Applied Energy的552条全部缺少可用的完整发表日；Building and Environment的466条中438条日期待核。两刊均未保存完整的published-online日期；部分其他可核日期使5条进入10月月度范围。不能把“仅5条进入回测”解释为“只采到5条”或“月刊已完整覆盖”。
+
+Crossref仅有2026-10这类卷期月份的记录，可能早在6月已经创建；created、indexed和卷期月份都不能直接冒充首次上线日。保留待核题录，后续取得出版社日期证据后再进入对应周期。当前可以验证5条可归期记录的月刊流程，尚不能验收两刊整月筛选质量。这个缺口与模型预算、服务器带宽无直接关系。

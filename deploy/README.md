@@ -11,7 +11,7 @@
 | 私有代码／配置／密钥 | `/opt/litbrief`，独立litbrief账户，无sudo权限 |
 | 工作台 | litbrief-review.service，仅监听127.0.0.1:8766 |
 | 每日发现 | litbrief-discover.timer，每天07:00 UTC+8，只读RSS，不调用AI、不发布 |
-| 周刊／月刊 | 服务和timer已安装，尚未启用；预算为0、发布模式manual |
+| 周刊／月刊 | 服务和timer已安装，尚未启用；软预算已设为各200万tokens、发布模式manual |
 | 公开网站 | `/var/www/litbrief/current` → 独立release，只有静态文件 |
 
 处理服务最多512MiB内存、半个CPU核心；工作台最多256MiB、四分之一CPU核心。真实采集期间观测约66MiB内存。2核2GB服务器足以继续低并发试运行，无需另开1核1GB节点。约10MB迁移包含校验约11秒；这不是长期带宽或可用性保证，后续仍观察真实周期。
@@ -77,4 +77,14 @@ python scripts/deploy_static.py --host ubuntu@43.134.100.87 --identity <私钥�
 
 ## 下一步的必要关口
 
-10月补采与五个周窗口、月度生成代码已就绪，并通过隔离测试；整月真实AI回测尚未获定额预算。先按用户选择的累计阈值执行回测，检验保留结果、来源覆盖与月刊质量，再开启付费定时器。当前人工参与集中于最终结果反馈，持续初筛由流程承担。
+10月补采与五个周窗口、月度生成代码已就绪，并通过隔离测试；2026-11-13用户已放宽预算，10月真实AI回测已按200万tokens监控线启动。先完成可取得材料的回测，检验保留结果、来源覆盖与月刊质量，再开启付费定时器。当前人工参与集中于最终结果反馈，持续初筛由流程承担。
+
+一次性回测入口（会调用真实模型，不发布）：
+
+```bash
+sudo -u litbrief sh -c 'cd /opt/litbrief && python3 scripts/backtest.py --month 2026-10 --max-tokens 2000000'
+```
+
+当前后台任务由独立临时单元`litbrief-backtest-202610.service`承载。运行时不要再启动第二份；可用`journalctl`查看进度，检查点位于`outputs/backtests/2026-10/progress.json`。临时单元停止后可能被systemd卸载，不能假定始终可以`systemctl start`重启；维护时重新用相同用户、工作目录与资源限制的`systemd-run`创建，或使用上面的前台入口。续跑读取原检查点，保留累计用量并重新检查各窗口；已完成的付费结果不重复请求。
+
+`evaluated_available_material`只表示当下可处理材料已走完，不能证明无遗漏或摘要全部取得；`evaluated_with_blocked_work`表示仍有未推进工作。日期待核、摘要缺失、概况核验未通过分别保留，不通过伪造上线日或放松核验凑出月刊。两刊日期问题的实测见[来源诊断](../docs/source-access.md#2026-11-13-月度来源日期缺口)。

@@ -323,24 +323,9 @@ def sources_page(db):
     if pending_requests:
         body += '<h3>调用恢复待处理</h3><p>先恢复已保存响应；没有响应时核对供应商计费，再明确解除暂停。重新排队不会绕过未解决的调用。</p><ul>'
         body += ''.join(f'<li>{h(r["id"])} · {h(r["mode"])} · {h(r["status"])} · {"用量已记录" if r["usage_json"] and r["usage_json"]!="null" else "计费待核"}</li>' for r in pending_requests) + '</ul>'
-    usage_file = ROOT / 'outputs/ai-trial/usage.jsonl'
-    totals = {'calls': 0, 'input': 0, 'output': 0, 'reasoning': 0, 'cached': 0, 'unknown': 0, 'tier_mismatch': 0}
-    if usage_file.exists():
-        for line in usage_file.read_text(encoding='utf-8').splitlines():
-            try:
-                event = json.loads(line)
-            except ValueError:
-                continue  # A concurrently written final line may be incomplete; next load will include it.
-            totals['calls'] += 1
-            usage = event.get('usage') or {}
-            if 'input_tokens' not in usage or 'output_tokens' not in usage:
-                totals['unknown'] += 1
-            totals['input'] += usage.get('input_tokens', 0)
-            totals['output'] += usage.get('output_tokens', 0)
-            totals['reasoning'] += (usage.get('output_tokens_details') or {}).get('reasoning_tokens', 0)
-            totals['cached'] += (usage.get('input_tokens_details') or {}).get('cached_tokens', 0)
-            totals['tier_mismatch'] += event.get('requested_tier') == 'fast' and event.get('returned_tier') not in {'fast','priority'}
-    body += f'<p>调用 {totals["calls"]} 次 · 输入 {totals["input"]:,} + 输出 {totals["output"]:,} = {totals["input"]+totals["output"]:,} tokens</p><p class="muted">其中缓存 {totals["cached"]:,}、推理 {totals["reasoning"]:,}（均已包含在上方）；{totals["unknown"]} 次未返回完整用量，fast 档位未获确认 {totals["tier_mismatch"]} 次。校验失败但返回用量的调用也计入；金额以供应商账单为准。</p></details><details class="disclosure"><summary>技术运行日志</summary>'
+    from usage_report import report
+    totals=report(db)
+    body += f'<p>调用 {totals["calls"]} 次 · 已报告用量 {totals["total"]:,} tokens（输入 {totals["input"]:,}，输出 {totals["output"]:,}）</p><p class="muted">缓存输入 {totals["cached"]:,}、推理输出 {totals["reasoning"]:,} 均已包含；{totals["unknown"]} 次未返回用量，不按零费用处理。按请求ID去重，离线缓存复用不重复收费。历史无ID记录 {totals["legacy_calls"]} 次；用量加总异常 {len(totals["arithmetic_mismatches"])} 次。统计为供应商返回值，金额以供应商账单为准。</p></details><details class="disclosure"><summary>技术运行日志</summary>'
     for row in db.execute('SELECT * FROM runs ORDER BY id DESC LIMIT 10'):
         body += f'<details><summary>{h(row["at"])} · {h(row["kind"])} · {h(row["status"])}</summary><pre>{h(row["detail"])}</pre></details>'
     return body+'</details>'

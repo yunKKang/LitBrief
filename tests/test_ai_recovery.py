@@ -56,6 +56,16 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(dict(self.db.execute('SELECT * FROM papers').fetchone()), before)
         self.assertIsNone(self.request())
 
+    def test_acknowledgment_preserves_cache_and_cycle_accounting(self):
+        self.run_batch()
+        request=self.request()
+        with self.db:self.db.execute("UPDATE ai_requests SET status='validation_failed',detail=? WHERE id=?",
+            (json.dumps({'cache_reused':True,'cycle_id':'fixture-cycle'}),request['id']))
+        batch.acknowledge(self.db,request['id'],'Retire invalid cached response; no new charge')
+        detail=json.loads(self.request()['detail'])
+        self.assertTrue(detail['cache_reused'])
+        self.assertEqual(detail['cycle_id'],'fixture-cycle')
+
     def test_response_saved_before_interruption_recovers_without_network(self):
         transport = Mock(side_effect=answer)
         with patch.object(batch, 'apply_saved', side_effect=RuntimeError('crash before DB apply')):

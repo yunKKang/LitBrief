@@ -243,10 +243,12 @@ def cycle(db, *, live=False, publish=False, max_tokens=0, max_groups=3, only=Non
                     if type(usage.get('total_tokens')) is int and usage['total_tokens']>=0: result['spent_tokens']+=usage['total_tokens']
                     else: result['billing_unknown']=True
             paid('title_screen',titles_only=True)
-            step('enrich',lambda:enrich(db,10,cohort=cohort,ids=ids))
+            # Match the abstract-screening capacity of this cycle. A fixed ten
+            # left otherwise ready papers waiting an entire scheduled week.
+            step('enrich',lambda:enrich(db,max_groups*3,cohort=cohort,ids=ids))
             paid('abstract_screen')
             from quality import prepare
-            needs_checks={r['paper_id'] for r in inspect(db,day,cohort=cohort,kind=kind,ids=ids) if r['reason']=='verification_missing_or_stale'}
+            needs_checks={r['paper_id'] for r in inspect(db,day,cohort=cohort,kind=kind,ids=ids) if r['reason'] in {'verification_missing_or_stale','verification_incomplete'}}
             qa=step('prepare_verify',lambda:prepare(db,'verify',day.isoformat(),count=50,only_ids=needs_checks,cohort=cohort))
             if qa: paid('verify',quality_batch=qa['batch_id'])
             audit=step('prepare_audit',lambda:prepare(db,'audit',day.isoformat(),count=12,only_ids=ids,cohort=cohort))

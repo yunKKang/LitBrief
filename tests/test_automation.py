@@ -82,6 +82,37 @@ class AutomationTests(unittest.TestCase):
         self.assertEqual(after,before)
         self.assertTrue(automation.admission(self.db,after,self.day)['eligible'])
 
+    def test_pending_verification_resumes_without_rechecking_completed_peers(self):
+        ids=[self.add('resume-'+str(i)) for i in range(4)]
+        with self.db:self.db.execute('UPDATE papers SET result=?',(json.dumps({'title_screened':True}),))
+        batch_screen.run(self.db,1000,group_size=3,config=CONFIG,transport=transport,cache=self.root/'cache')
+        qa=quality.prepare(self.db,'verify','partial-fixture')['batch_id']
+        batch_screen.run(self.db,1000,group_size=3,max_groups=1,config=CONFIG,transport=transport,cache=self.root/'cache',quality_batch=qa)
+        self.assertEqual(sum(g['reason']=='verification_incomplete' for g in automation.inspect(self.db,self.day)),1)
+        before=self.db.execute("SELECT count(*) FROM ai_requests WHERE mode='verify'").fetchone()[0]
+        with patch('workflow.collect',return_value={}),patch('workflow.enrich',return_value={'attempted':0}):
+            result=automation.cycle(self.db,live=True,max_tokens=1000,max_groups=1,only=['2398-9629'],day=self.day)
+        self.assertTrue(all(g['eligible'] for g in result['admission']))
+        self.assertEqual(self.db.execute("SELECT count(*) FROM ai_requests WHERE mode='verify'").fetchone()[0],before+1)
+
+    def test_scheduled_capacity_does_not_strand_eleventh_available_abstract(self):
+        import enrichment
+        ids=[self.add('enrich-'+str(i)) for i in range(11)]
+        with self.db:
+            for pid in ids:
+                paper=json.loads(self.row(pid)['data']);paper['abstract']='';paper['abstract_source']=''
+                self.db.execute("UPDATE papers SET data=?,state='awaiting_abstract',result=? WHERE id=?",
+                    (json.dumps(paper),json.dumps({'title_screened':True}),pid))
+        found={'status':'available','abstract':'Housing retrofit reduces energy demand.',
+               'source':'Synthetic source','url':'https://example.org/abstract','provider':'openalex'}
+        with patch.object(enrichment,'DATA',self.root),patch.object(enrichment,'HTTP'), \
+             patch.object(enrichment,'fetch_material',return_value=found):
+            result=automation.cycle(self.db,live=True,max_tokens=10000,max_groups=4,
+                day=self.day,discover=False)
+        self.assertEqual(len(result['admission']),11)
+        self.assertTrue(all(g['eligible'] for g in result['admission']))
+        self.assertEqual(self.db.execute("SELECT count(*) FROM papers WHERE state='awaiting_abstract'").fetchone()[0],0)
+
     def test_policy_material_and_feedback_changes_each_prevent_admission(self):
         pid=self.ready()
         with patch.object(automation,'policy_hash',return_value='new-policy'):

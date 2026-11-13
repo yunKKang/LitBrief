@@ -95,7 +95,7 @@ def apply_saved(db, request_id):
     try:
         if quality_mode:
             from quality import validate
-            results = validate(response, batch, quality_mode)
+            results = validate(response, batch, quality_mode, partial=True)
         else:
             results = validate_group(response, batch, titles_only, partial=True)
     except (ValueError, TypeError, KeyError) as exc:
@@ -152,7 +152,7 @@ def acknowledge(db, request_id, note):
         if not row or row['status'] in {'applied', 'acknowledged'}:
             raise ValueError('Request is missing or already resolved')
         db.execute("UPDATE ai_requests SET status='acknowledged',detail=?,updated_at=? WHERE id=?",
-                   (json.dumps({'note': note, 'action': 'manual authorization for later explicit requeue'}, ensure_ascii=False), now(), request_id))
+                   (json.dumps({**json.loads(row['detail']), 'note': note, 'action': 'manual authorization for later explicit requeue'}, ensure_ascii=False), now(), request_id))
         # Stop stale screening claims, without overwriting intervening human edits.
         for paper in json.loads(row['inputs']):
             if row['mode'] in {'audit','verify'}:
