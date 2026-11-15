@@ -262,7 +262,8 @@ def issues_page(db, token):
     body += f'<form method="post" action="/export"><input type="hidden" name="csrf" value="{token}"><button class="secondary">重新导出已确认期次</button></form>'
     for row in db.execute('SELECT * FROM issues ORDER BY id DESC'):
         count = db.execute('SELECT count(*) FROM issue_items WHERE issue_id=?', (row['id'],)).fetchone()[0]
-        body += f'<section><h2>{h(row["id"])} 至 {h(row["end_date"])}</h2><p>{"已发布" if row["state"] == "published" else "草稿"} · {count} 篇 <a href="/preview?id={h(row["id"])}">预览本期</a></p>'
+        status_label = {'published': '已发布', 'superseded': '已被正式期次替代'}.get(row['state'], '草稿')
+        body += f'<section><h2>{h(row["id"])} 至 {h(row["end_date"])}</h2><p>{status_label} · {count} 篇 <a href="/preview?id={h(row["id"])}">预览本期</a></p>'
         if row['state'] == 'draft':
             body += f'<form method="post" action="/publish"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{h(row["id"])}"><label class="check"><input type="checkbox" name="confirmed" value="yes" required>我已审核本期，确认生成公开页面</label><button>发布至本地公开目录</button></form><form method="post" action="/discard"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{h(row["id"])}"><button class="secondary">撤回草稿，继续编辑</button></form>'
         body += '</section>'

@@ -29,7 +29,7 @@ class BackfillWindowTests(unittest.TestCase):
 
     def test_open_window_is_rejected(self):
         with self.assertRaises(ValueError):
-            backfill_window.run('2026-11-08', '2026-11-14', 1000, folder=Path(tempfile.mkdtemp()))
+            backfill_window.run('2026-11-15', '2026-11-21', 1000, folder=Path(tempfile.mkdtemp()))
 
 
 class _Closed:
