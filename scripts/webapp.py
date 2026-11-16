@@ -170,7 +170,7 @@ def preview_window(db):
     return period(end)
 
 
-def review_index(db, query):
+def review_index(db, query, token=''):
     state = query.get('state', ['awaiting_review'])[0]
     cohort = query.get('cohort', ['monitoring'])[0]
     scopes={'monitoring':'日常监测','baseline':'历史校准样本','date_unverified':'日期待核','inactive_source':'停用来源留档','merged_identity':'已合并题录','all':'全部记录'}
@@ -187,7 +187,7 @@ def review_index(db, query):
     cparams=[] if cohort=='all' else [cohort]
     counts={r[0]:r[1] for r in db.execute('SELECT state,count(*) FROM papers'+cwhere+' GROUP BY state',cparams)}
     cohorts={r[0]:r[1] for r in db.execute('SELECT cohort,count(*) FROM papers GROUP BY cohort')}
-    body='<div class="workspace-heading"><div><h1>审核文献</h1><p>先看 AI 推荐，再抽检排除结果。原始候选不等于阅读清单。</p></div><a class="button" href="/reading">预览待审试刊</a></div>'
+    body='<div class="workspace-heading"><div><h1>审核文献</h1><p>列表已有标题和简短概况，可直接保留或排除；详情仅在需要核对时打开。</p></div><a class="button" href="/reading">预览待审试刊</a></div>'
     body+='<div class="queue-summary">'+''.join(f'<a href="/queue?cohort={cohort}&state={key}">{label}<strong>{counts.get(key,0)}</strong></a>' for key,label in [('awaiting_review','推荐待审'),('awaiting_abstract','待补材料'),('ai_excluded','排除结果可抽检')])+'</div>'
     body+='<details class="disclosure"><summary>筛选候选记录</summary><div class="cohort-nav">'+''.join(f'<a href="/queue?cohort={key}&state=all" {"aria-current=page" if cohort==key else ""}>{label} {sum(cohorts.values()) if key=="all" else cohorts.get(key,0)}</a>' for key,label in scopes.items())+'</div>'
     body+='<div class="filters">'+''.join(f'<a href="/queue?cohort={cohort}&state={key}" {"aria-current=page" if state==key else ""}>{label} {counts.get(key,0)}</a>' for key,label in STATES.items())+'</div>'
@@ -199,7 +199,12 @@ def review_index(db, query):
         data,result=json.loads(row['data']),json.loads(row['result'] or '{}')
         title=result.get('title_zh') or data['title']
         original=f'<p class="original-title">{h(data["title"])}</p>' if result.get('title_zh') else ''
-        body+=f'<article class="paper"><div class="paper-meta"><span class="journal">{h(data["journal_title"])}</span><span class="decision">{h(STATES[row["state"]])}</span></div><h3><a href="/paper?id={row["id"]}">{h(title)}</a></h3>{original}<p class="summary">{h(result.get("summary") or result.get("reason") or "等待处理，尚无相关性判断。")}</p><div class="review-action"><span>{h(result.get("basis", "原始候选"))} · #{row["id"]}</span><a href="/paper?id={row["id"]}">查看依据与审核 ›</a></div></article>'
+        quick=''
+        if row['state']=='awaiting_review':
+            topics=json.loads(row['topics'])
+            topic_inputs=''.join(f'<input type="hidden" name="topics" value="{h(t)}">' for t in topics)
+            quick=f'''<div class="quick-review"><span class="muted">列表快速审核：使用当前 AI 概况，不改写内容。</span><form method="post" action="/review"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{row["id"]}"><input type="hidden" name="revision" value="{row["revision"]}"><input type="hidden" name="action" value="approve"><input type="hidden" name="summary" value="{h(result.get("summary", ""))}">{topic_inputs}<input type="hidden" name="note" value="列表快速保留"><button>保留</button></form><form method="post" action="/review"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{row["id"]}"><input type="hidden" name="revision" value="{row["revision"]}"><input type="hidden" name="action" value="reject"><input type="hidden" name="note" value="列表快速排除"><button class="secondary">排除</button></form></div>'''
+        body+=f'<article class="paper"><div class="paper-meta"><span class="journal">{h(data["journal_title"])}</span><span class="decision">{h(STATES[row["state"]])}</span></div><h3><a href="/paper?id={row["id"]}">{h(title)}</a></h3>{original}<p class="summary">{h(result.get("summary") or result.get("reason") or "等待处理，尚无相关性判断。")}</p>{quick}<div class="review-action"><span>{h(result.get("basis", "原始候选"))} · #{row["id"]}</span><a href="/paper?id={row["id"]}">查看依据与审核 ›</a></div></article>'
     if not rows:body+='<div class="empty">这个队列目前没有文献。你可以切换其他处理状态。</div>'
     body+=f'<div class="pagination">共 {total} 篇 · 第 {page} 页 '
     if page>1:body+=f'<a href="/queue?cohort={cohort}&state={state}&page={page-1}">上一页</a> '
@@ -245,10 +250,10 @@ def paper_form(db, paper_id, token):
     if schedule and row['state']=='awaiting_abstract':
         body+=f'<p class="notice">补充尝试 {schedule["attempts"]} 次 · '+(f'下次尝试：{h(schedule["next_attempt_at"])}' if schedule['next_attempt_at'] else '自动尝试已暂停，请人工核对来源或材料。')+'</p>'
     labels={'relevant':'值得读','not_relevant':'不相关','low_priority':'相关但本期不优先','duplicate':'内容重复／增量不足','summary_issue':'概况有问题'}
-    body+=f'<section><h2>最终结果反馈（可选）</h2><p>只需留下阅读判断，反馈不会公开。</p><form method="post" action="/feedback"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{paper_id}"><input type="hidden" name="revision" value="{row["revision"]}"><label>反馈类型<select name="category">'+''.join(f'<option value="{key}">{value}</option>' for key,value in labels.items())+'</select></label><label>具体意见<textarea name="note" required rows="3"></textarea></label><button>保存反馈</button></form>'
+    body+=f'<details class="disclosure"><summary>最终结果反馈（可选）</summary><p class="muted">反馈不会公开，也不会自动训练模型或改写下一次提示词；它只用于保护该篇文章的状态、延后准入或标记需要复核。</p><form method="post" action="/feedback"><input type="hidden" name="csrf" value="{token}"><input type="hidden" name="id" value="{paper_id}"><input type="hidden" name="revision" value="{row["revision"]}"><label>反馈类型<select name="category">'+''.join(f'<option value="{key}">{value}</option>' for key,value in labels.items())+'</select></label><label>具体意见<textarea name="note" required rows="3"></textarea></label><button>保存反馈</button></form>'
     for feedback in db.execute('SELECT category,note FROM feedback WHERE paper_id=? ORDER BY id DESC LIMIT 5',(paper_id,)):
         body+=f'<p>{h(labels.get(feedback["category"],feedback["category"]))}：{h(feedback["note"])}</p>'
-    body+='</section>'
+    body+='</details>'
     return body
 
 
@@ -374,7 +379,7 @@ def make_handler(db_path, token, public):
                     elif path.path == '/' and not query:
                         return self.send(200,shell('阅读结果',reading_preview(db),preview=True))
                     elif path.path in {'/','/queue'}:
-                        body = review_index(db, query)
+                        body = review_index(db, query, token)
                     elif path.path == '/paper':
                         body = paper_form(db, int(query['id'][0]), token)
                     elif path.path == '/issues':
