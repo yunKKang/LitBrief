@@ -189,6 +189,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT snapshot FROM issue_items WHERE issue_id='2026-11-11'").fetchone()[0], snapshot)
         self.assertTrue((output/'issues/2026-11-11.html').is_file())
 
+    def test_human_review_can_edit_paper_in_draft_but_not_published_issue(self):
+        pid = self.add({**PAPER, 'doi': '10.1000/draft-review'})
+        with self.db:
+            self.db.execute("INSERT INTO issues VALUES('2026-10-summary','2026-10-31','draft','2026-11-16',NULL)")
+            self.db.execute("INSERT INTO issue_items VALUES('2026-10-summary',?,?)", (pid, json.dumps({'id': pid})))
+        review(self.db, pid, 'reject', '', [], '边界不符', 1)
+        self.assertIsNone(self.db.execute("SELECT 1 FROM issue_items WHERE paper_id=?", (pid,)).fetchone())
+        self.assertEqual(self.db.execute("SELECT state FROM papers WHERE id=?", (pid,)).fetchone()[0], 'rejected')
+
     def test_preview_window_tracks_collection_not_wall_clock(self):
         with self.db:
             self.db.execute('INSERT INTO runs(at,kind,status,detail) VALUES(?,?,?,?)',

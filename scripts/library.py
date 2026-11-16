@@ -419,8 +419,13 @@ def review(db, paper_id, action, summary, topics, note, revision):
             raise ValueError('AI request unresolved: recover saved response or acknowledge billing before requeue')
         if action in {'approve', 'requeue'} and row['journal'] not in registry():
             raise ValueError('Journal is inactive; its retained records cannot enter review or publication queues')
-        if db.execute('SELECT 1 FROM issue_items WHERE paper_id=?', (paper_id,)).fetchone():
-            raise ValueError('Paper belongs to an issue; remove draft before editing. Published snapshots are immutable.')
+        published = db.execute("SELECT 1 FROM issue_items JOIN issues ON issues.id=issue_id WHERE paper_id=? AND issues.state='published'", (paper_id,)).fetchone()
+        if published:
+            raise ValueError('Paper belongs to a published issue; published snapshots are immutable.')
+        # A draft is a review projection. Remove its stale snapshot before a
+        # human edit, so reject/requeue/summary changes cannot leave the old
+        # version in the draft. It can be re-added after review if appropriate.
+        db.execute("DELETE FROM issue_items WHERE paper_id=? AND issue_id IN (SELECT id FROM issues WHERE state='draft')", (paper_id,))
         data = json.loads(row['data'])
         result = json.loads(row['result'] or '{}')
         if action=='requeue' and data.pop('retention_compacted',False):
