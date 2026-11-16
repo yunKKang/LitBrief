@@ -152,7 +152,7 @@ def reading_preview(db, token=''):
         items.append({'id':row['id'],'title':data['title'],'title_zh':result.get('title_zh',''),
                       'journal':source['title'],'display':source['display'],'dates':data.get('dates',{}),
                       'summary':result.get('summary',''),'reason':result.get('reason',''),'topics':json.loads(row['topics']),
-                      'revision':row['revision'],'reviewable':row['state']=='awaiting_review',
+                      'revision':row['revision'],'reviewable':row['human_decision']!='approve',
                       'url':('https://doi.org/'+data['doi']) if data.get('doi') else next((u for u in data.get('urls',[]) if safe_url(u)), '')})
     start,end=preview_window(db)
     return render_collection(items,start,end,preview=True,review_pending=pending,token=token)
