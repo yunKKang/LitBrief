@@ -106,3 +106,5 @@ sudo -u litbrief sh -c 'cd /opt/litbrief && python3 scripts/backfill_window.py -
 新失败日志保存安全的HTTP状态码或transport/invalid_json分类，不记录供应商错误正文、请求头或凭证。早期只记录RuntimeError的失败无法事后还原HTTP状态，不据此猜测限流或账号额度不足。
 
 2026-11-15正式周刊已发布，期次为2026-11-08至2026-11-14，共10篇。2026-11-11试运行快照已标记为superseded并保留内部证据；导出器只读取published，因此公开归档只显示正式周刊。
+
+2026-10历史汇总草稿`2026-10-summary`已建立，包含39篇准入文献。工作台审核后由维护流程确认发布并重新导出部署；自动周刊／月刊timer不会处理或发布该历史草稿。

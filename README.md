@@ -232,3 +232,5 @@ python3 scripts/workflow.py run-cycle --kind monthly --cohort baseline --window-
 切换后的10条fast／priority请求记录均返回default，已请求Fast模式但加速未获供应商确认。152项Windows与Ubuntu离线测试通过；活动库integrity_check为ok，已发布7篇快照校验值保持一致。真实明细和最终候选清单只保存于私有outputs，不进入公开Git。
 
 2026-11-15正式周刊已完成并发布，期次为2026-11-08至2026-11-14，共10篇。此前2026-11-11的7篇首期试运行与正式周刊日期重叠，现保留为私有superseded快照，不再出现在公开归档；工作台仍可追溯查看。
+
+2026-10历史汇总已在服务器工作台建立为私有草稿 `2026-10-summary`，包含39篇当前规则准入文献；审核完成前不会公开，也不会被周刊自动定时器发布。
