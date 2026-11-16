@@ -19,13 +19,20 @@ from datetime import timedelta, date, datetime, timezone
 from presentation import h, shell, search_box, card, render_collection, archive_index
 
 
-def issue_body(db, issue_id, preview=False):
+def issue_body(db, issue_id, preview=False, token=''):
     issue = db.execute('SELECT * FROM issues WHERE id=?', (issue_id,)).fetchone()
     if not issue:
         raise ValueError('Unknown issue')
-    items = [json.loads(r[0]) for r in db.execute('SELECT snapshot FROM issue_items WHERE issue_id=? ORDER BY paper_id', (issue_id,))]
+    items=[]
+    for row in db.execute('SELECT paper_id,snapshot FROM issue_items WHERE issue_id=? ORDER BY paper_id', (issue_id,)):
+        item=json.loads(row['snapshot'])
+        paper=db.execute('SELECT revision,human_decision,topics FROM papers WHERE id=?',(row['paper_id'],)).fetchone()
+        if paper:
+            item.update(revision=paper['revision'],topics=json.loads(paper['topics'] or '[]'),
+                        reviewable=preview and issue['state']=='draft' and paper['human_decision']!='approve')
+        items.append(item)
     monthly=issue_id.endswith('-monthly')
-    body=render_collection(items, issue_id[:7]+'-01' if monthly else issue_id, issue['end_date'], preview=preview)
+    body=render_collection(items, issue_id[:7]+'-01' if monthly else issue_id, issue['end_date'], preview=preview, token=token)
     if monthly:body=body.replace('<h1>本期文献</h1>','<h1>月度补充</h1>',1)
     notice=db.execute('SELECT note FROM issue_notices WHERE issue_id=?',(issue_id,)).fetchone()
     return body+(f'<p class="notice">{h(notice[0])}</p>' if notice else '')
@@ -399,7 +406,7 @@ def make_handler(db_path, token, public):
                             result=item['result']
                             body+=f'<article class="paper"><p class="paper-meta">{h(item["journal"])} · {h(item["sample_kind"])} · {h(item["stage"])} · {h(item["status"])}</p><h3><a href="/paper?id={item["paper_id"]}">{h(item["title"])}</a></h3><p>{h(result.get("verdict","等待核验"))}：{h(result.get("reason",""))}</p></article>'
                     elif path.path == '/preview':
-                        body = issue_body(db, query['id'][0], preview=True)
+                        body = issue_body(db, query['id'][0], preview=True, token=token)
                         # Draft previews stay on authenticated-by-loopback review routes.
                         import re
                         body = re.sub(r'href="../papers/(\d+)\.html"', r'href="/paper?id=\1"', body)
