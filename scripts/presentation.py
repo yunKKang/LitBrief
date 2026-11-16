@@ -113,7 +113,9 @@ def card(item,prefix='',detail=False,featured=False,preview=False):
 def render_collection(items,start,end,preview=False,prefix='../',review_pending=None):
     important=[i for i in items if i['display']=='重点文献'];related=[i for i in items if i['display']!='重点文献']
     label='<span class="draft-tag">内部预览</span>' if preview else '<span class="draft-tag">'+('已发布' if items else '准备中')+'</span>'
-    body=f'<div class="edition-heading"><h1>本期文献</h1><p>{h(start.replace("-","."))} 至 {h(end.replace("-","."))} {label}</p></div>'+search_box()
+    heading='当前待审窗口' if preview else '本期文献'
+    note='<p class="muted">这是尚未发布的当前收集窗口；正式周刊在完整周日—周六窗口结束后发布。</p>' if preview else ''
+    body=f'<div class="edition-heading"><h1>{heading}</h1><p>{h(start.replace("-","."))} 至 {h(end.replace("-","."))} {label}</p>{note}</div>'+search_box()
     if preview and review_pending:
         body+=f'<p class="review-note">{review_pending} 篇尚未确认。<a href="/queue?cohort=monitoring&amp;state=awaiting_review">查看候选</a></p>'
     if items:
