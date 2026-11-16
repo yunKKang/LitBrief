@@ -93,7 +93,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     return body
 
 
-def card(item,prefix='',detail=False,featured=False,preview=False):
+def card(item,prefix='',detail=False,featured=False,preview=False,token=''):
     href=f'/paper?id={item["id"]}' if preview else f'{prefix}papers/{item["id"]}.html'
     title=item.get('title_zh') or item['title']
     title_html=h(title) if detail else f'<a href="{href}">{h(title)}</a>'
@@ -104,13 +104,18 @@ def card(item,prefix='',detail=False,featured=False,preview=False):
     reason=f'<details class="recommendation"><summary>入选依据</summary><p>{h(item.get("reason"))}</p></details>' if item.get('reason') and not compact else ''
     url=safe_url(item.get('url'))
     external=f'<a class="read-link" href="{h(url)}" target="_blank" rel="noopener noreferrer">阅读原文 <span aria-hidden="true">›</span></a>' if url else ''
+    quick=''
+    if preview and item.get('reviewable') and token:
+        topics=item.get('topics',[])
+        topic_inputs=''.join(f'<input type="hidden" name="topics" value="{h(t)}">' for t in topics)
+        quick=f'''<div class="inline-review"><span class="muted">直接审核</span><form method="post" action="/review"><input type="hidden" name="csrf" value="{h(token)}"><input type="hidden" name="id" value="{item["id"]}"><input type="hidden" name="revision" value="{item["revision"]}"><input type="hidden" name="action" value="approve"><input type="hidden" name="summary" value="{h(item.get("summary", ""))}">{topic_inputs}<input type="hidden" name="note" value="阅读页快速保留"><button>保留</button></form><form method="post" action="/review"><input type="hidden" name="csrf" value="{h(token)}"><input type="hidden" name="id" value="{item["id"]}"><input type="hidden" name="revision" value="{item["revision"]}"><input type="hidden" name="action" value="reject"><input type="hidden" name="note" value="阅读页快速排除"><button class="secondary">排除</button></form></div>'''
     day=publication_day(item)
     stamp=day[5:].replace('-','.') if day else '日期待核'
     if item.get('late_arrival'):stamp+=' · 补录'
     date_attr=f' datetime="{h(day)}" title="{h(day)}"' if day else ''
-    return f'''<article id="paper-{item['id']}" class="paper {'compact-paper' if compact else ''}" data-topics="{h(' '.join(tags))}"><time class="paper-date"{date_attr}>{h(stamp)}</time><div class="paper-card"><div class="paper-meta"><span class="journal">{h(item['journal'])}</span><span class="topic-label">{h(' · '.join(tags))}</span></div><h3>{title_html}</h3>{original}{summary}<div class="paper-foot">{reason}{external}</div></div></article>'''
+    return f'''<article id="paper-{item['id']}" class="paper {'compact-paper' if compact else ''}" data-topics="{h(' '.join(tags))}"><time class="paper-date"{date_attr}>{h(stamp)}</time><div class="paper-card"><div class="paper-meta"><span class="journal">{h(item['journal'])}</span><span class="topic-label">{h(' · '.join(tags))}</span></div><h3>{title_html}</h3>{original}{summary}<div class="paper-foot">{reason}{external}</div>{quick}</div></article>'''
 
-def render_collection(items,start,end,preview=False,prefix='../',review_pending=None):
+def render_collection(items,start,end,preview=False,prefix='../',review_pending=None,token=''):
     important=[i for i in items if i['display']=='重点文献'];related=[i for i in items if i['display']!='重点文献']
     label='<span class="draft-tag">内部预览</span>' if preview else '<span class="draft-tag">'+('已发布' if items else '准备中')+'</span>'
     heading='当前待审窗口' if preview else '本期文献'
@@ -121,7 +126,7 @@ def render_collection(items,start,end,preview=False,prefix='../',review_pending=
     if items:
         body+='<details class="reading-map"><summary>本期目录 <span>'+str(len(items))+' 篇</span></summary><ol>'+''.join(f'<li><a href="#paper-{p["id"]}">{h(p.get("title_zh") or p["title"])}</a></li>' for p in items)+'</ol></details>'
     body+='<section class="important-section"><div class="section-heading"><h2>重要文献</h2><span>仅依据摘要</span></div>'
-    body+=''.join(card(p,prefix,preview=preview) for p in important) or '<div class="empty">本期正在准备中。完成筛选与审核后，文献将在这里展示。</div>'
+    body+=''.join(card(p,prefix,preview=preview,token=token) for p in important) or '<div class="empty">本期正在准备中。完成筛选与审核后，文献将在这里展示。</div>'
     body+='</section><section id="related" class="related-section"><div class="section-heading"><h2>其他相关文献</h2><span data-section-count>'+str(len(related))+' 篇</span></div>'
-    body+=''.join(card(p,prefix,preview=preview) for p in related) or '<div class="empty">本期暂无其他相关文献。</div>'
+    body+=''.join(card(p,prefix,preview=preview,token=token) for p in related) or '<div class="empty">本期暂无其他相关文献。</div>'
     return body+'</section>'

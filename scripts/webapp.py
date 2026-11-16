@@ -141,7 +141,7 @@ STATES = {'merged':'已合并题录', 'pending': '待 AI 筛选', 'awaiting_abst
           'ai_excluded':'AI 排除抽检', 'needs_material':'材料待核','type_excluded':'类型排除'}
 
 
-def reading_preview(db):
+def reading_preview(db, token=''):
     items=[];pending=0
     for row in db.execute("SELECT * FROM papers WHERE cohort='monitoring' AND state IN ('awaiting_review','approved') ORDER BY id"):
         data,result=json.loads(row['data']),json.loads(row['result'] or '{}')
@@ -152,9 +152,10 @@ def reading_preview(db):
         items.append({'id':row['id'],'title':data['title'],'title_zh':result.get('title_zh',''),
                       'journal':source['title'],'display':source['display'],'dates':data.get('dates',{}),
                       'summary':result.get('summary',''),'reason':result.get('reason',''),'topics':json.loads(row['topics']),
+                      'revision':row['revision'],'reviewable':row['state']=='awaiting_review',
                       'url':('https://doi.org/'+data['doi']) if data.get('doi') else next((u for u in data.get('urls',[]) if safe_url(u)), '')})
     start,end=preview_window(db)
-    return render_collection(items,start,end,preview=True,review_pending=pending)
+    return render_collection(items,start,end,preview=True,review_pending=pending,token=token)
 
 
 def preview_window(db):
@@ -375,9 +376,9 @@ def make_handler(db_path, token, public):
                     return self.send(200,asset.read_bytes(),kind,cache)
                 with closing(connect(db_path)) as db:
                     if path.path == '/reading':
-                        return self.send(200, shell('阅读结果', reading_preview(db), preview=True))
+                        return self.send(200, shell('阅读结果', reading_preview(db, token), preview=True))
                     elif path.path == '/' and not query:
-                        return self.send(200,shell('阅读结果',reading_preview(db),preview=True))
+                        return self.send(200,shell('阅读结果',reading_preview(db, token),preview=True))
                     elif path.path in {'/','/queue'}:
                         body = review_index(db, query, token)
                     elif path.path == '/paper':
